@@ -28,6 +28,10 @@ public class Order : BaseEntity
     [Column("payment_status")]
     public string PaymentStatus { get; set; }
 
+    // CASH | BANK_TRANSFER
+    [Column("payment_method")]
+    public string PaymentMethod { get; set; } = "BANK_TRANSFER";
+
     [Column("note")]
     public string? Note { get; set; }
 
