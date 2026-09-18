@@ -18,6 +18,8 @@ namespace FoodEmolite.Application.Services;
 
 public class OrderService : IOrderService
 {
+    private static readonly string[] AllowedPaymentMethods = { "CASH", "BANK_TRANSFER" };
+
     private readonly IUnitOfWork _unitOfWork;
     private static readonly HttpClient _httpClient = new HttpClient();
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -53,6 +55,9 @@ public class OrderService : IOrderService
 
         if (request.Items.Any(x => x.Quantity <= 0))
             return BaseResponse<CreateOrderResponseDto>.Fail("Quantity must be greater than 0");
+
+        if (!AllowedPaymentMethods.Contains(request.PaymentMethod))
+            return BaseResponse<CreateOrderResponseDto>.Fail("Invalid PaymentMethod");
 
         var store = await repoStore.FirstOrDefaultAsync(x =>
             x.RefCode == request.StoreRefCode &&
@@ -102,6 +107,16 @@ public class OrderService : IOrderService
 
         promotionContext.StoreWideDiscountOverrides = storeWideDiscountOverrides;
 
+        var totalQuantity = request.Items.Sum(x => x.Quantity);
+
+        var originalSubtotal = request.Items.Sum(item =>
+        {
+            var food = foods.First(x => x.Id == item.StoreFoodId);
+            var optionAmount = item.Options?.Sum(x => x.AdditionalPrice) ?? 0;
+
+            return (food.Price + optionAmount) * item.Quantity;
+        });
+
         decimal totalAmount = 0;
 
         foreach (var item in request.Items)
@@ -109,10 +124,8 @@ public class OrderService : IOrderService
             var food = foods.First(x => x.Id == item.StoreFoodId);
             var optionAmount = item.Options?.Sum(x => x.AdditionalPrice) ?? 0;
 
-            totalAmount += ComputeLineTotal(food, item.Quantity, optionAmount, promotionContext);
+            totalAmount += ComputeLineTotal(food, item.Quantity, optionAmount, promotionContext, originalSubtotal, totalQuantity);
         }
-
-        var totalQuantity = request.Items.Sum(x => x.Quantity);
 
         var (selectedGifts, giftError) = ValidateSelectedGifts(promotionContext, request.SelectedGifts, totalAmount, totalQuantity);
 
@@ -161,6 +174,7 @@ public class OrderService : IOrderService
             TotalAmount = totalAmount,
             OrderStatus = "PENDING",
             PaymentStatus = totalAmount <= 0 ? "PAID" : "UNPAID",
+            PaymentMethod = request.PaymentMethod,
             Note = request.Note,
             CreatedAt = DateTimeHelper.VnNow,
             CreatedBy = currentUserId
@@ -174,7 +188,8 @@ public class OrderService : IOrderService
             var food = foods.First(x => x.Id == item.StoreFoodId);
 
             await AddOrderItemsForLineAsync(
-                repoOrderItem, repoOrderItemOption, refCode, order.Id, food, item.Quantity, item.Options, promotionContext, currentUserId);
+                repoOrderItem, repoOrderItemOption, refCode, order.Id, food, item.Quantity, item.Options, promotionContext, currentUserId,
+                originalSubtotal, totalQuantity);
         }
 
         foreach (var gift in selectedGifts)
@@ -230,6 +245,7 @@ public class OrderService : IOrderService
                 OrderId = order.Id,
                 OrderCode = order.OrderCode,
                 PaymentStatus = order.PaymentStatus,
+                PaymentMethod = order.PaymentMethod,
                 TotalAmount = order.TotalAmount
             });
     }
@@ -252,6 +268,9 @@ public class OrderService : IOrderService
 
         if (request.Items.Any(x => x.Quantity <= 0))
             return BaseResponse<CreateOrderResponseDto>.Fail("Quantity must be greater than 0");
+
+        if (!AllowedPaymentMethods.Contains(request.PaymentMethod))
+            return BaseResponse<CreateOrderResponseDto>.Fail("Phương thức thanh toán không hợp lệ");
 
         var store = await repoStore.FirstOrDefaultAsync(x =>
             x.RefCode == request.StoreRefCode &&
@@ -311,6 +330,18 @@ public class OrderService : IOrderService
 
         promotionContext.StoreWideDiscountOverrides = storeWideDiscountOverrides;
 
+        // Tính trước trên giá GỐC (chưa khuyến mãi) để xét điều kiện "mua tối thiểu" của từng CT —
+        // tránh vòng lặp phụ thuộc (giá phụ thuộc điều kiện, điều kiện lại phụ thuộc giá đã giảm).
+        var totalQuantity = request.Items.Sum(x => x.Quantity);
+
+        var originalSubtotal = request.Items.Sum(item =>
+        {
+            var food = foods.First(x => x.Id == item.StoreFoodId);
+            var optionAmount = item.Options?.Sum(x => x.AdditionalPrice) ?? 0;
+
+            return (food.Price + optionAmount) * item.Quantity;
+        });
+
         decimal totalAmount = 0;
 
         foreach (var item in request.Items)
@@ -318,10 +349,8 @@ public class OrderService : IOrderService
             var food = foods.First(x => x.Id == item.StoreFoodId);
             var optionAmount = item.Options?.Sum(x => x.AdditionalPrice) ?? 0;
 
-            totalAmount += ComputeLineTotal(food, item.Quantity, optionAmount, promotionContext);
+            totalAmount += ComputeLineTotal(food, item.Quantity, optionAmount, promotionContext, originalSubtotal, totalQuantity);
         }
-
-        var totalQuantity = request.Items.Sum(x => x.Quantity);
 
         var (selectedGifts, giftError) = ValidateSelectedGifts(promotionContext, request.SelectedGifts, totalAmount, totalQuantity);
 
@@ -395,6 +424,7 @@ public class OrderService : IOrderService
             TotalAmount = totalAmount,
             OrderStatus = "PENDING",
             PaymentStatus = totalAmount <= 0 ? "PAID" : "UNPAID",
+            PaymentMethod = request.PaymentMethod,
             Note = request.Note,
             CreatedAt = DateTimeHelper.VnNow,
             CreatedBy = null,
@@ -409,7 +439,8 @@ public class OrderService : IOrderService
             var food = foods.First(x => x.Id == item.StoreFoodId);
 
             await AddOrderItemsForLineAsync(
-                repoOrderItem, repoOrderItemOption, refCode, order.Id, food, item.Quantity, item.Options, promotionContext, null);
+                repoOrderItem, repoOrderItemOption, refCode, order.Id, food, item.Quantity, item.Options, promotionContext, null,
+                originalSubtotal, totalQuantity);
         }
 
         foreach (var gift in selectedGifts)
@@ -463,6 +494,7 @@ public class OrderService : IOrderService
                 OrderId = order.Id,
                 OrderCode = order.OrderCode,
                 PaymentStatus = order.PaymentStatus,
+                PaymentMethod = order.PaymentMethod,
                 TotalAmount = order.TotalAmount
             });
     }
@@ -514,6 +546,7 @@ public class OrderService : IOrderService
                  TotalAmount = order.TotalAmount,
                  OrderStatus = order.OrderStatus,
                  PaymentStatus = order.PaymentStatus,
+                 PaymentMethod = order.PaymentMethod,
                  Note = order.Note,
                  CreatedAt = order.CreatedAt,
                  Items = new List<OrderItemResponseDto>()
@@ -599,6 +632,7 @@ public class OrderService : IOrderService
             TotalAmount = order.TotalAmount,
             OrderStatus = order.OrderStatus,
             PaymentStatus = order.PaymentStatus,
+            PaymentMethod = order.PaymentMethod,
             Note = order.Note,
             CreatedAt = order.CreatedAt,
             Items = items
@@ -689,6 +723,7 @@ public class OrderService : IOrderService
                 TotalAmount = order.TotalAmount,
                 OrderStatus = order.OrderStatus,
                 PaymentStatus = order.PaymentStatus,
+                PaymentMethod = order.PaymentMethod,
                 Note = order.Note,
                 CreatedAt = order.CreatedAt,
                 Items = new List<OrderItemResponseDto>()
@@ -852,6 +887,7 @@ public class OrderService : IOrderService
                 TotalAmount = order.TotalAmount,
                 OrderStatus = order.OrderStatus,
                 PaymentStatus = order.PaymentStatus,
+                PaymentMethod = order.PaymentMethod,
                 Note = order.Note,
                 CreatedAt = order.CreatedAt,
                 Items = new List<OrderItemResponseDto>()
@@ -1271,8 +1307,8 @@ public class OrderService : IOrderService
     private sealed class PromotionPricingContext
     {
         public PromotionPricingContext(
-            Dictionary<long, decimal> fixedPriceMap,
-            Dictionary<long, PromotionDiscountItemResponseDto> discountMap,
+            Dictionary<long, (decimal Price, PromotionResponseDto Promotion)> fixedPriceMap,
+            Dictionary<long, (PromotionDiscountItemResponseDto Item, PromotionResponseDto Promotion)> discountMap,
             List<PromotionResponseDto> giftPromotions,
             List<PromotionResponseDto> storeWideDiscountPromotions)
         {
@@ -1282,8 +1318,10 @@ public class OrderService : IOrderService
             StoreWideDiscountPromotions = storeWideDiscountPromotions;
         }
 
-        public Dictionary<long, decimal> FixedPriceMap { get; }
-        public Dictionary<long, PromotionDiscountItemResponseDto> DiscountMap { get; }
+        // StoreFoodId -> (giá đồng giá, promotion sở hữu) — cần Promotion để kiểm tra điều kiện
+        // (mua tối thiểu) trước khi áp giá, không áp vô điều kiện như trước.
+        public Dictionary<long, (decimal Price, PromotionResponseDto Promotion)> FixedPriceMap { get; }
+        public Dictionary<long, (PromotionDiscountItemResponseDto Item, PromotionResponseDto Promotion)> DiscountMap { get; }
         public List<PromotionResponseDto> GiftPromotions { get; }
 
         // PRODUCT_DISCOUNT dạng ApplyToAllProducts = true (khách tự chọn 1 món nhận giảm giá)
@@ -1318,15 +1356,15 @@ public class OrderService : IOrderService
 
         var fixedPriceMap = promotions
             .Where(p => p.PromotionType == "FIXED_PRICE")
-            .SelectMany(p => p.FixedPriceItems)
-            .GroupBy(i => i.StoreFoodId)
-            .ToDictionary(g => g.Key, g => g.First().FixedPrice);
+            .SelectMany(p => p.FixedPriceItems.Select(i => (Item: i, Promotion: p)))
+            .GroupBy(x => x.Item.StoreFoodId)
+            .ToDictionary(g => g.Key, g => (g.First().Item.FixedPrice, g.First().Promotion));
 
         var discountMap = promotions
-            .Where(p => p.PromotionType == "PRODUCT_DISCOUNT")
-            .SelectMany(p => p.DiscountItems)
-            .GroupBy(i => i.StoreFoodId)
-            .ToDictionary(g => g.Key, g => g.First());
+            .Where(p => p.PromotionType == "PRODUCT_DISCOUNT" && !p.ApplyToAllProducts)
+            .SelectMany(p => p.DiscountItems.Select(i => (Item: i, Promotion: p)))
+            .GroupBy(x => x.Item.StoreFoodId)
+            .ToDictionary(g => g.Key, g => (g.First().Item, g.First().Promotion));
 
         var giftPromotions = promotions
             .Where(p => p.PromotionType == "BUY_X_GET_Y")
@@ -1340,17 +1378,38 @@ public class OrderService : IOrderService
     }
 
     /// <summary>
+    /// Chương trình có điều kiện (mua tối thiểu số tiền/số lượng) đã đạt hay chưa — tính trên
+    /// <paramref name="originalSubtotal"/>/<paramref name="totalQuantity"/> của TOÀN đơn hàng theo
+    /// giá GỐC (chưa áp bất kỳ khuyến mãi nào), để tránh vòng lặp phụ thuộc (giá phụ thuộc điều
+    /// kiện, điều kiện lại phụ thuộc giá).
+    /// </summary>
+    private static bool IsPromotionConditionMet(PromotionResponseDto promotion, decimal originalSubtotal, int totalQuantity)
+    {
+        return promotion.ConditionType switch
+        {
+            "MIN_ORDER_AMOUNT" => originalSubtotal >= (promotion.ConditionMinAmount ?? decimal.MaxValue),
+            "MIN_QUANTITY" => totalQuantity >= (promotion.ConditionMinQuantity ?? int.MaxValue),
+            _ => true
+        };
+    }
+
+    /// <summary>
     /// Giá của món theo các promotion FIXED_PRICE / PRODUCT_DISCOUNT (chọn sẵn danh sách món) —
     /// KHÔNG bao gồm giảm giá "toàn bộ sản phẩm" (ApplyToAllProducts), vì loại đó chỉ giảm cho đúng
     /// 1 đơn vị của món khách chọn (xem <see cref="ComputeLineTotal"/>), không áp cho cả dòng.
+    /// Chỉ áp giá khuyến mãi nếu chương trình đó ĐÃ ĐẠT điều kiện (nếu có) trên toàn đơn hàng.
     /// </summary>
-    private static decimal GetBasePrice(StoreFood food, PromotionPricingContext context)
+    private static decimal GetBasePrice(StoreFood food, PromotionPricingContext context, decimal originalSubtotal, int totalQuantity)
     {
-        if (context.FixedPriceMap.TryGetValue(food.Id, out var fixedPrice))
-            return fixedPrice;
+        if (context.FixedPriceMap.TryGetValue(food.Id, out var fixedEntry) &&
+            IsPromotionConditionMet(fixedEntry.Promotion, originalSubtotal, totalQuantity))
+            return fixedEntry.Price;
 
-        if (context.DiscountMap.TryGetValue(food.Id, out var discount))
+        if (context.DiscountMap.TryGetValue(food.Id, out var discountEntry) &&
+            IsPromotionConditionMet(discountEntry.Promotion, originalSubtotal, totalQuantity))
         {
+            var discount = discountEntry.Item;
+
             if (discount.DiscountType == "PERCENT")
             {
                 var discountAmount = food.Price * discount.DiscountValue / 100m;
@@ -1372,9 +1431,11 @@ public class OrderService : IOrderService
     /// giá "toàn bộ sản phẩm", CHỈ 1 đơn vị được tính giá đã giảm — phần còn lại (nếu số lượng > 1)
     /// vẫn tính giá bình thường, vì chương trình chỉ cho giảm đúng 1 sản phẩm/lần dùng.
     /// </summary>
-    private static decimal ComputeLineTotal(StoreFood food, int quantity, decimal optionAmount, PromotionPricingContext context)
+    private static decimal ComputeLineTotal(
+        StoreFood food, int quantity, decimal optionAmount, PromotionPricingContext context,
+        decimal originalSubtotal, int totalQuantity)
     {
-        var basePrice = GetBasePrice(food, context);
+        var basePrice = GetBasePrice(food, context, originalSubtotal, totalQuantity);
 
         if (context.StoreWideDiscountOverrides.TryGetValue(food.Id, out var discountedUnitPrice))
             return basePrice * (quantity - 1) + discountedUnitPrice + optionAmount * quantity;
@@ -1538,10 +1599,12 @@ public class OrderService : IOrderService
         int quantity,
         List<CreateOrderItemOptionRequestDto>? options,
         PromotionPricingContext context,
-        long? currentUserId)
+        long? currentUserId,
+        decimal originalSubtotal,
+        int totalQuantity)
     {
         var optionAmount = options?.Sum(x => x.AdditionalPrice) ?? 0;
-        var basePrice = GetBasePrice(food, context);
+        var basePrice = GetBasePrice(food, context, originalSubtotal, totalQuantity);
 
         if (context.StoreWideDiscountOverrides.TryGetValue(food.Id, out var discountedUnitPrice))
         {

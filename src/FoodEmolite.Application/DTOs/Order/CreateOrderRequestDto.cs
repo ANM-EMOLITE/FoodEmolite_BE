@@ -17,6 +17,9 @@
         // Mã khuyến mãi khách nhập (không bắt buộc) — chỉ những promotion có promotion_code
         // mới cần mã này để được áp dụng; promotion không có mã sẽ tự áp dụng như bình thường.
         public string? PromoCode { get; set; }
+
+        // CASH | BANK_TRANSFER — mặc định chuyển khoản (giữ hành vi cũ nếu FE không gửi)
+        public string PaymentMethod { get; set; } = "BANK_TRANSFER";
     }
 
     public class SelectedGiftRequestDto
