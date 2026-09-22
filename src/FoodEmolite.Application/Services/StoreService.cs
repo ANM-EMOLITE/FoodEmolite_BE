@@ -1,6 +1,7 @@
 using FoodEmolite.Shared.Common;
 using FoodEmolite.Application.DTOs.Store;
 using FoodEmolite.Application.ExternalService.Interfaces;
+using FoodEmolite.Application.Helpers;
 using FoodEmolite.Application.Interfaces;
 using FoodEmolite.Domain.Entities;
 using FoodEmolite.Domain.Interfaces;
@@ -65,7 +66,8 @@ public class StoreService : IStoreService
             currentUserId > 0 ? currentUserId : null,
             null,
             "CREATE_STORE",
-            $"Tạo cửa hàng \"{store.StoreName}\"");
+            $"Tạo cửa hàng \"{store.StoreName}\"",
+            store.RefCode);
 
         return BaseResponse<string>.Success("Create store successfully");
     }
@@ -81,6 +83,9 @@ public class StoreService : IStoreService
         if (store is null)
             return BaseResponse<string>.Fail("Store not found");
 
+        var oldStoreName = store.StoreName;
+        var changes = new ChangeSummary();
+
         if (request.ThumbnailFile != null && request.ThumbnailFile.Length > 0)
         {
             var uploadResult = await _cloudinaryService.UploadStoreImageAsync(
@@ -90,7 +95,15 @@ public class StoreService : IStoreService
                 return BaseResponse<string>.Fail(uploadResult.Message);
 
             store.ThumbnailUrl = uploadResult.Data;
+            changes.Note("Đổi ảnh cửa hàng");
         }
+
+        changes
+            .Text("Tên", store.StoreName, request.StoreName)
+            .Text("Số điện thoại", store.PhoneNumber, request.PhoneNumber)
+            .Text("Địa chỉ", store.Address, request.Address)
+            .Text("Mô tả", store.Description, request.Description)
+            .Flag("Trạng thái", store.IsActive, request.IsActive, "Đang hoạt động", "Ngừng hoạt động");
 
         store.StoreName = request.StoreName;
         store.PhoneNumber = request.PhoneNumber;
@@ -102,6 +115,8 @@ public class StoreService : IStoreService
 
         repoStore.Update(store);
         await _unitOfWork.SaveChangesAsync();
+
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_STORE", changes.Describe($"Cập nhật thông tin cửa hàng \"{oldStoreName}\""), store.RefCode);
 
         return BaseResponse<string>.Success("Update store successfully");
     }
@@ -122,6 +137,8 @@ public class StoreService : IStoreService
 
         repoStore.Update(store);
         await _unitOfWork.SaveChangesAsync();
+
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "DELETE_STORE", $"Xoá cửa hàng \"{store.StoreName}\"", store.RefCode);
 
         return BaseResponse<string>.Success("Delete store successfully");
     }

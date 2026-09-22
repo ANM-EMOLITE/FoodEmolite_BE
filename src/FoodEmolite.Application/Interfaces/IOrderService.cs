@@ -12,6 +12,12 @@ public interface IOrderService
 
     Task<BaseResponse<OrderResponseDto>> GetDetailAsync(long id, long currentUserId);
 
+    /// <summary>
+    /// Chi tiết đơn hàng cho đại lý — lọc theo cửa hàng do currentUserId sở hữu (Store.OwnerAccountId), không phải CustomerAccountId.
+    /// Không dùng claim "ref_code" trên JWT vì đó là RefCode của account, không phải RefCode của cửa hàng.
+    /// </summary>
+    Task<BaseResponse<OrderResponseDto>> GetDetailByStoreAsync(long id, long currentUserId);
+
     Task<BaseTableResponse<OrderResponseDto>> GetByStoreRefCodeAsync(BaseSearchRequest<OrderSearchRequest> request);
 
     /// <summary>Danh sách đơn hàng toàn hệ thống (mọi cửa hàng) — dùng cho admin. StoreRefCode trong SearchParams là lọc tuỳ chọn.</summary>
@@ -23,7 +29,6 @@ public interface IOrderService
 
     Task<BaseResponse<string>> CancelAsync(long id, long currentUserId, string refCode);
 
-    Task<BaseResponse<byte[]>> PrintOrdersAsync(long currentUserId, PrintOrdersRequestDto request);
 
     Task<BaseResponse<string>> GetPaymentStatusAsync(string orderCode);
 

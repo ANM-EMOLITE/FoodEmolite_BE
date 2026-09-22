@@ -54,7 +54,8 @@ public class SePayWebhookService : ISePayWebhookService
 
         await repoTransaction.AddAsync(transaction);
 
-        if (order != null && order.PaymentStatus != "PAID" && order.TotalAmount == request.Amount)
+        // Đơn đã huỷ không tự chuyển sang PAID; giao dịch vẫn được lưu (IsProcessed = false) để đại lý đối soát/hoàn tiền.
+        if (order != null && order.OrderStatus != "CANCELLED" && order.PaymentStatus != "PAID" && order.TotalAmount == request.Amount)
         {
             order.PaymentStatus = "PAID";
             transaction.IsProcessed = true;

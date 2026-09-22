@@ -14,5 +14,8 @@ namespace FoodEmolite.Application.DTOs.Order
         public string? StoreRefCode { get; set; }
         public string? OrderStatus { get; set; }
         public string? PaymentStatus { get; set; }
+
+        /// <summary>Trạng thái gộp hiển thị cho đại lý: UNPAID | PAID | CANCELLED (đơn đã huỷ luôn tính là CANCELLED).</summary>
+        public string? Status { get; set; }
     }
 }

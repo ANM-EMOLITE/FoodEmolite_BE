@@ -3,6 +3,7 @@ using FoodEmolite.Application.DTOs.Promotion;
 using FoodEmolite.Application.DTOs.Realtime;
 using FoodEmolite.Application.ExternalService.Interfaces;
 using FoodEmolite.Application.Helpers;
+using FoodEmolite.Application.Helpers;
 using FoodEmolite.Application.Interfaces;
 using FoodEmolite.Domain.Entities;
 using FoodEmolite.Domain.Interfaces;
@@ -21,15 +22,18 @@ public class PromotionService : IPromotionService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IRealtimeNotificationService _realtimeNotificationService;
     private readonly ICloudinaryService _cloudinaryService;
+    private readonly IActivityLogService _activityLogService;
 
     public PromotionService(
         IUnitOfWork unitOfWork,
         IRealtimeNotificationService realtimeNotificationService,
-        ICloudinaryService cloudinaryService)
+        ICloudinaryService cloudinaryService,
+        IActivityLogService activityLogService)
     {
         _unitOfWork = unitOfWork;
         _realtimeNotificationService = realtimeNotificationService;
         _cloudinaryService = cloudinaryService;
+        _activityLogService = activityLogService;
     }
 
     public async Task<BaseTableResponse<PromotionResponseDto>> GetByStoreRefCodeAsync(long currentUserId, BaseSearchRequest<PromotionSearchRequest> request)
@@ -284,6 +288,8 @@ public class PromotionService : IPromotionService
             });
         }
 
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "CREATE_PROMOTION", $"Tạo chương trình khuyến mãi \"{request.Name.Trim()}\"", store.RefCode);
+
         return BaseResponse<string>.Success("Tạo chương trình khuyến mãi thành công");
     }
 
@@ -346,6 +352,31 @@ public class PromotionService : IPromotionService
 
         var isStoreWideDiscount = request.PromotionType == "PRODUCT_DISCOUNT" && request.ApplyToAllProducts;
 
+        var oldPromotionName = promotion.Name;
+        var newConditionMinAmount = request.ConditionType == "MIN_ORDER_AMOUNT" ? request.ConditionMinAmount : null;
+        var newConditionMinQuantity = request.ConditionType == "MIN_QUANTITY" ? request.ConditionMinQuantity : null;
+
+        var promotionChanges = new ChangeSummary()
+            .Text("Tên", promotion.Name, request.Name.Trim())
+            .Text("Mã khuyến mãi", promotion.PromotionCode, string.IsNullOrWhiteSpace(request.PromotionCode) ? null : request.PromotionCode.Trim())
+            .Text("Loại", PromotionTypeText(promotion.PromotionType), PromotionTypeText(request.PromotionType))
+            .Text("Mô tả", promotion.Description, request.Description)
+            .Text("Ngày bắt đầu", promotion.StartDate.ToString("dd/MM/yyyy"), request.StartDate.ToString("dd/MM/yyyy"))
+            .Text("Ngày kết thúc", promotion.EndDate?.ToString("dd/MM/yyyy"), request.EndDate?.ToString("dd/MM/yyyy"))
+            .Text("Giờ bắt đầu", promotion.StartTime?.ToString("HH:mm"), request.StartTime?.ToString("HH:mm"))
+            .Text("Giờ kết thúc", promotion.EndTime?.ToString("HH:mm"), request.EndTime?.ToString("HH:mm"))
+            .Text(
+                "Điều kiện",
+                ConditionText(promotion.ConditionType, promotion.ConditionMinAmount, promotion.ConditionMinQuantity),
+                ConditionText(request.ConditionType, newConditionMinAmount, newConditionMinQuantity))
+            .Text(
+                "Giảm giá toàn bộ sản phẩm",
+                StoreWideDiscountText(promotion.ApplyToAllProducts, promotion.DiscountType, promotion.DiscountValue),
+                StoreWideDiscountText(isStoreWideDiscount, request.DiscountType, request.DiscountValue));
+
+        if (promotion.DaysOfWeekMask != request.DaysOfWeekMask)
+            promotionChanges.Note("Đổi các ngày áp dụng trong tuần");
+
         promotion.PromotionCode = string.IsNullOrWhiteSpace(request.PromotionCode) ? null : request.PromotionCode.Trim();
         promotion.PromotionType = request.PromotionType;
         promotion.Name = request.Name.Trim();
@@ -383,6 +414,8 @@ public class PromotionService : IPromotionService
                 Status = status
             });
         }
+
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_PROMOTION", promotionChanges.Describe($"Cập nhật chương trình khuyến mãi \"{oldPromotionName}\""), promotion.StoreRefCode);
 
         return BaseResponse<string>.Success("Cập nhật chương trình khuyến mãi thành công");
     }
@@ -581,6 +614,8 @@ public class PromotionService : IPromotionService
 
         await UpdateStatusAsync(promotion, PromotionStatusCalculator.Paused, currentUserId);
 
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "PAUSE_PROMOTION", $"Tạm dừng chương trình khuyến mãi \"{promotion.Name}\"", promotion.StoreRefCode);
+
         return BaseResponse<string>.Success("Tạm dừng chương trình thành công");
     }
 
@@ -613,6 +648,8 @@ public class PromotionService : IPromotionService
 
         await UpdateStatusAsync(promotion, status, currentUserId);
 
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "RESUME_PROMOTION", $"Tiếp tục chương trình khuyến mãi \"{promotion.Name}\"", promotion.StoreRefCode);
+
         return BaseResponse<string>.Success("Tiếp tục chương trình thành công");
     }
 
@@ -627,6 +664,8 @@ public class PromotionService : IPromotionService
             return BaseResponse<string>.Fail("Chương trình đã kết thúc");
 
         await UpdateStatusAsync(promotion, PromotionStatusCalculator.Ended, currentUserId);
+
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "CANCEL_PROMOTION", $"Huỷ chương trình khuyến mãi \"{promotion.Name}\"", promotion.StoreRefCode);
 
         return BaseResponse<string>.Success("Huỷ chương trình thành công");
     }
@@ -648,6 +687,8 @@ public class PromotionService : IPromotionService
         _unitOfWork.GetRepository<Promotion>().Update(promotion);
         await _unitOfWork.SaveChangesAsync();
 
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "DELETE_PROMOTION", $"Xoá chương trình khuyến mãi \"{promotion.Name}\"", promotion.StoreRefCode);
+
         return BaseResponse<string>.Success("Xoá chương trình thành công");
     }
 
@@ -661,6 +702,31 @@ public class PromotionService : IPromotionService
             .ToListAsync();
 
         await RecomputeAndBroadcastAsync(promotions);
+    }
+
+    private static string PromotionTypeText(string? type) => type switch
+    {
+        "FIXED_PRICE" => "Đồng giá",
+        "PRODUCT_DISCOUNT" => "Giảm giá sản phẩm",
+        "BUY_X_GET_Y" => "Mua X tặng Y",
+        _ => type ?? string.Empty
+    };
+
+    private static string ConditionText(string? conditionType, decimal? minAmount, int? minQuantity) => conditionType switch
+    {
+        "MIN_ORDER_AMOUNT" => $"Đơn tối thiểu {minAmount:N0}đ",
+        "MIN_QUANTITY" => $"Mua tối thiểu {minQuantity} sản phẩm",
+        _ => "Không có điều kiện"
+    };
+
+    private static string StoreWideDiscountText(bool applyToAll, string? discountType, decimal? discountValue)
+    {
+        if (!applyToAll)
+            return "Không";
+
+        return discountType == "PERCENT"
+            ? $"Giảm {discountValue:0.##}%"
+            : $"Giảm {discountValue:N0}đ";
     }
 
     private async Task UpdateStatusAsync(Promotion promotion, string status, long currentUserId)

@@ -1,5 +1,6 @@
 using FoodEmolite.Shared.Common;
 using FoodEmolite.Application.DTOs.StoreFoodCategories;
+using FoodEmolite.Application.Helpers;
 using FoodEmolite.Application.Interfaces;
 using FoodEmolite.Domain.Entities;
 using FoodEmolite.Domain.Interfaces;
@@ -12,10 +13,12 @@ namespace FoodEmolite.Application.Services;
 public class StoreFoodCategoriesService : IStoreFoodCategoriesService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IActivityLogService _activityLogService;
 
-    public StoreFoodCategoriesService(IUnitOfWork unitOfWork)
+    public StoreFoodCategoriesService(IUnitOfWork unitOfWork, IActivityLogService activityLogService)
     {
         _unitOfWork = unitOfWork;
+        _activityLogService = activityLogService;
     }
 
     public async Task<BaseResponse<List<StoreFoodCategoryResponseDto>>> GetByStoreRefCodeAsync(GetByStoreRefCodeRequest request)
@@ -221,6 +224,8 @@ public class StoreFoodCategoriesService : IStoreFoodCategoriesService
         await repoCategory.AddAsync(entity);
         await _unitOfWork.SaveChangesAsync();
 
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "CREATE_CATEGORY", $"Tạo danh mục \"{entity.CategoryName}\"", store.RefCode);
+
         return BaseResponse<string>
             .Success("Create category successfully");
     }
@@ -253,6 +258,12 @@ public class StoreFoodCategoriesService : IStoreFoodCategoriesService
                 .Fail("Category not found");
         }
 
+        var oldCategoryName = category.CategoryName;
+
+        var changes = new ChangeSummary()
+            .Text("Tên", category.CategoryName, request.CategoryName)
+            .Text("Mô tả", category.Description, request.Description);
+
         category.CategoryName = request.CategoryName;
         category.Description = request.Description;
         category.UpdatedAt = DateTimeHelper.VnNow;
@@ -261,6 +272,8 @@ public class StoreFoodCategoriesService : IStoreFoodCategoriesService
         repoCategory.Update(category);
 
         await _unitOfWork.SaveChangesAsync();
+
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_CATEGORY", changes.Describe($"Cập nhật danh mục \"{oldCategoryName}\""), store.RefCode);
 
         return BaseResponse<string>.Success("Update category successfully");
     }
@@ -312,6 +325,8 @@ public class StoreFoodCategoriesService : IStoreFoodCategoriesService
         repoCategory.Update(category);
 
         await _unitOfWork.SaveChangesAsync();
+
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "DELETE_CATEGORY", $"Xoá danh mục \"{category.CategoryName}\"", store.RefCode);
 
         return BaseResponse<string>
             .Success("Delete category successfully");

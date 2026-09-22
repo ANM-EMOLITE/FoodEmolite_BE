@@ -15,6 +15,10 @@ public class ActivityLogSearchRequest
 {
     public string? Keyword { get; set; }
     public string? Action { get; set; }
+
+    /// <summary>Nhóm thao tác: CREATE (thêm) | UPDATE (sửa) | DELETE (xoá) | OTHER (còn lại: thanh toán, huỷ, tạm dừng...).</summary>
+    public string? ActionGroup { get; set; }
+
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
 }

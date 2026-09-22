@@ -59,6 +59,15 @@ public class OrderController : BaseApiController
         return Ok(result);
     }
 
+    /// <summary>Chi tiết đơn hàng cho đại lý — lọc theo cửa hàng của đại lý (không phải theo khách hàng đặt đơn).</summary>
+    [HttpGet("{id}/store")]
+    public async Task<IActionResult> GetDetailByStore(long id)
+    {
+        var result = await _orderService.GetDetailByStoreAsync(id, CurrentUserId!.Value);
+
+        return Ok(result);
+    }
+
     [HttpPost("store/search")]
     public async Task<IActionResult> GetByStoreRefCode([FromBody] BaseSearchRequest<OrderSearchRequest> request)
     {
@@ -96,20 +105,6 @@ public class OrderController : BaseApiController
     {
         var result = await _orderService.CancelAsync(id, CurrentUserId.Value, CurrentUserRefCode);
         return Ok(result);
-    }
-
-    [HttpPost("print")]
-    public async Task<IActionResult> PrintOrders([FromBody] PrintOrdersRequestDto request)
-    {
-        var result = await _orderService.PrintOrdersAsync(CurrentUserId!.Value, request);
-
-        if (!result.IsSuccess) return Ok(result);
-
-        return File(
-            result.Data!,
-            "application/pdf",
-            $"orders-{DateTimeHelper.VnNow:yyyyMMddHHmmss}.pdf"
-        );
     }
 
     [AllowAnonymous]

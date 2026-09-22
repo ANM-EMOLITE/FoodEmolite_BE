@@ -35,7 +35,7 @@ public class StoreFoodController : BaseApiController
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(long id)
     {
-        var result = await _storeFoodService.DeleteAsync(id);
+        var result = await _storeFoodService.DeleteAsync(CurrentUserRefCode, id);
         return Ok(result);
     }
 
