@@ -29,4 +29,8 @@ public class ActivityLog : BaseEntity
 
     [Column("description")]
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>Cửa hàng mà hành động này liên quan tới (để đại lý xem lịch sử hoạt động của cửa hàng mình). Null nếu không gắn với cửa hàng nào.</summary>
+    [Column("store_ref_code")]
+    public string? StoreRefCode { get; set; }
 }

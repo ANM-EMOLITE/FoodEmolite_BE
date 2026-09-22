@@ -27,6 +27,7 @@
         public DateTime CreatedAt { get; set; }
 
         public List<OrderItemResponseDto> Items { get; set; } = new();
+
     }
 
     public class OrderItemResponseDto
@@ -39,11 +40,22 @@
 
         public string FoodName { get; set; }
 
+        public string? ProductCode { get; set; }
+
+        public string? ThumbnailUrl { get; set; }
+
         public int Quantity { get; set; }
 
         public decimal UnitPrice { get; set; }
 
         public decimal TotalPrice { get; set; }
+
+        /// <summary>Đơn giá gốc trước khuyến mãi (bằng UnitPrice nếu không có khuyến mãi).</summary>
+        public decimal OriginalUnitPrice { get; set; }
+
+        public long? PromotionId { get; set; }
+
+        public string? PromotionName { get; set; }
 
         public List<OrderItemOptionResponseDto> Options { get; set; } = new();
     }

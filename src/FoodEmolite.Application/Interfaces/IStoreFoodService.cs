@@ -10,7 +10,7 @@ public interface IStoreFoodService
 
     Task<BaseResponse<string>> UpdateAsync(string refCode, long id, UpdateStoreFoodRequestDto request);
 
-    Task<BaseResponse<string>> DeleteAsync(long id);
+    Task<BaseResponse<string>> DeleteAsync(string refCode, long id);
 
     Task<BaseTableResponse<StoreFoodResponseDto>> GetAllAsync(
         int page,

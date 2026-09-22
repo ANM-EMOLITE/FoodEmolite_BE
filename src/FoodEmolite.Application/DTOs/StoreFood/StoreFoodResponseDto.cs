@@ -18,6 +18,8 @@ namespace FoodEmolite.Application.DTOs.StoreFood
 
         public string FoodName { get; set; }
 
+        public string ProductCode { get; set; }
+
         public string? ThumbnailUrl { get; set; }
 
         public string? Description { get; set; }

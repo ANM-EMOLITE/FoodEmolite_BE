@@ -45,4 +45,12 @@ public class AuthController : BaseApiController
         var result = await _authService.CheckEmailAsync(email);
         return Ok(result);
     }
+
+    [Authorize]
+    [HttpPut("change-password")]
+    public async Task<IActionResult> ChangePassword(ChangePasswordRequest request)
+    {
+        var result = await _authService.ChangePasswordAsync(CurrentUserId!.Value, request);
+        return Ok(result);
+    }
 }

@@ -394,6 +394,12 @@ public class ProfileService : IProfileService
         if (order is null)
             return BaseResponse<StorePaymentInfoResponseDto>.Fail("Order not found");
 
+        if (order.OrderStatus == "CANCELLED")
+            return BaseResponse<StorePaymentInfoResponseDto>.Fail("Đơn hàng đã bị hủy");
+
+        if (order.PaymentMethod == "CASH")
+            return BaseResponse<StorePaymentInfoResponseDto>.Fail("Đơn hàng thanh toán bằng tiền mặt");
+
         var store = await repoStore.FirstOrDefaultAsync(x =>
             x.RefCode == order.StoreRefCode &&
             x.IsActive &&

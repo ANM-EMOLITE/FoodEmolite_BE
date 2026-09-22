@@ -13,6 +13,9 @@ namespace FoodEmolite.Application.DTOs.StoreFood
 
         public string FoodName { get; set; }
 
+        /// <summary>Mã sản phẩm — để trống sẽ tự sinh (SPxxxxx theo cửa hàng), nhập tay để đặt mã tuỳ chỉnh.</summary>
+        public string? ProductCode { get; set; }
+
         public IFormFile? ThumbnailFile { get; set; }
 
         public string? Description { get; set; }

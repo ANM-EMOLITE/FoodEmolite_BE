@@ -13,6 +13,9 @@ public class StoreFood : BaseEntity
     [Column("food_name")]
     public string FoodName { get; set; }
 
+    [Column("product_code")]
+    public string ProductCode { get; set; }
+
     [Column("thumbnail_url")]
     public string? ThumbnailUrl { get; set; }
 

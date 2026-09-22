@@ -14,5 +14,7 @@ namespace FoodEmolite.Application.Interfaces
         Task<BaseResponse<CurrentUserResponse>>VerifyAsync(long userId);
 
         Task<BaseResponse<bool>> CheckEmailAsync(string email);
+
+        Task<BaseResponse<string>> ChangePasswordAsync(long userId, ChangePasswordRequest request);
     }
 }

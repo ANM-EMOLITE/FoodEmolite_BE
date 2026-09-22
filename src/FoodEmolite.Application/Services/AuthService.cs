@@ -210,6 +210,34 @@ public class AuthService : IAuthService
                     .GetExpiredTime(_configuration)
             });
     }
+    public async Task<BaseResponse<string>> ChangePasswordAsync(long userId, ChangePasswordRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+            return BaseResponse<string>.Fail("Mật khẩu mới phải có ít nhất 6 ký tự");
+
+        if (request.NewPassword != request.ConfirmNewPassword)
+            return BaseResponse<string>.Fail("Xác nhận mật khẩu mới không khớp");
+
+        var repoAccount = _unitOfWork.GetRepository<Account>();
+
+        var account = await repoAccount.FirstOrDefaultAsync(x => x.Id == userId && !x.IsDeleted);
+
+        if (account is null)
+            return BaseResponse<string>.Fail("Account not found");
+
+        if (!BCrypt.Net.BCrypt.Verify(request.OldPassword, account.PasswordHash))
+            return BaseResponse<string>.Fail("Mật khẩu hiện tại không đúng");
+
+        account.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        account.UpdatedAt = DateTimeHelper.VnNow;
+        account.UpdatedBy = userId;
+
+        repoAccount.Update(account);
+        await _unitOfWork.SaveChangesAsync();
+
+        return BaseResponse<string>.Success("Đổi mật khẩu thành công");
+    }
+
     public async Task<BaseResponse<bool>> CheckEmailAsync(string email)
     {
         var repoAccount =_unitOfWork.GetRepository<Account>();

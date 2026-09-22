@@ -1,8 +1,8 @@
 using FoodEmolite.Shared.Common;
 using FoodEmolite.Application.DTOs.Order;
-using FoodEmolite.Application.DTOs.Print;
 using FoodEmolite.Application.DTOs.Promotion;
 using FoodEmolite.Application.DTOs.Realtime;
+using FoodEmolite.Application.ExternalService.Interfaces;
 using FoodEmolite.Application.Interfaces;
 using FoodEmolite.Domain.Entities;
 using FoodEmolite.Domain.Interfaces;
@@ -10,9 +10,6 @@ using FoodEmolite.Shared.Entities;
 using FoodEmolite.Shared.Responses;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using QuestPDF.Fluent;
-using QuestPDF.Helpers;
-using QuestPDF.Infrastructure;
 
 namespace FoodEmolite.Application.Services;
 
@@ -26,20 +23,26 @@ public class OrderService : IOrderService
     private readonly IRealtimeNotificationService _realtimeNotificationService;
     private readonly IPromotionService _promotionService;
     private readonly IActivityLogService _activityLogService;
+    private readonly ICloudinaryService _cloudinaryService;
 
     public OrderService(
         IUnitOfWork unitOfWork,
         IHttpContextAccessor httpContextAccessor,
         IRealtimeNotificationService realtimeNotificationService,
         IPromotionService promotionService,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        ICloudinaryService cloudinaryService)
     {
         _unitOfWork = unitOfWork;
         _httpContextAccessor = httpContextAccessor;
         _realtimeNotificationService = realtimeNotificationService;
         _promotionService = promotionService;
         _activityLogService = activityLogService;
+        _cloudinaryService = cloudinaryService;
     }
+
+    private string? BuildFoodThumbnailUrl(string? thumbnailRefCode) =>
+        !string.IsNullOrWhiteSpace(thumbnailRefCode) ? _cloudinaryService.BuildImageUrl(thumbnailRefCode) : null;
 
     public async Task<BaseResponse<CreateOrderResponseDto>> CreateAsync(long currentUserId, string refCode, CreateOrderRequestDto request)
     {
@@ -570,12 +573,22 @@ public class OrderService : IOrderService
                 OrderId = orderItem.OrderId,
                 StoreFoodId = orderItem.StoreFoodId,
                 FoodName = food.FoodName,
+                ProductCode = food.ProductCode,
+                ThumbnailUrl = food.ThumbnailUrl,
                 Quantity = orderItem.Quantity,
                 UnitPrice = orderItem.UnitPrice,
-                TotalPrice = orderItem.TotalPrice
+                TotalPrice = orderItem.TotalPrice,
+                OriginalUnitPrice = orderItem.OriginalUnitPrice,
+                PromotionId = orderItem.PromotionId,
+                PromotionName = orderItem.PromotionName
             })
             .ToListAsync();
         await FillOrderItemOptionsAsync(orderItems);
+
+        foreach (var item in orderItems)
+        {
+            item.ThumbnailUrl = BuildFoodThumbnailUrl(item.ThumbnailUrl);
+        }
         foreach (var order in items)
         {
             order.Items = orderItems
@@ -616,12 +629,22 @@ public class OrderService : IOrderService
                 OrderId = orderItem.OrderId,
                 StoreFoodId = orderItem.StoreFoodId,
                 FoodName = food.FoodName,
+                ProductCode = food.ProductCode,
+                ThumbnailUrl = food.ThumbnailUrl,
                 Quantity = orderItem.Quantity,
                 UnitPrice = orderItem.UnitPrice,
-                TotalPrice = orderItem.TotalPrice
+                TotalPrice = orderItem.TotalPrice,
+                OriginalUnitPrice = orderItem.OriginalUnitPrice,
+                PromotionId = orderItem.PromotionId,
+                PromotionName = orderItem.PromotionName
             })
             .ToListAsync();
         await FillOrderItemOptionsAsync(items);
+
+        foreach (var item in items)
+        {
+            item.ThumbnailUrl = BuildFoodThumbnailUrl(item.ThumbnailUrl);
+        }
         return BaseResponse<OrderResponseDto>.Success(new OrderResponseDto
         {
             Id = order.Id,
@@ -637,6 +660,101 @@ public class OrderService : IOrderService
             CreatedAt = order.CreatedAt,
             Items = items
         });
+    }
+
+    public async Task<BaseResponse<OrderResponseDto>> GetDetailByStoreAsync(long id, long currentUserId)
+    {
+        var repoStore = _unitOfWork.GetRepository<Store>();
+        var repoOrder = _unitOfWork.GetRepository<Order>();
+        var repoOrderItem = _unitOfWork.GetRepository<OrderItem>();
+        var repoFood = _unitOfWork.GetRepository<StoreFood>();
+        var repoAccount = _unitOfWork.GetRepository<Account>();
+        var repoAccountProfile = _unitOfWork.GetRepository<AccountProfile>();
+        var repoCustomer = _unitOfWork.GetRepository<Customer>();
+
+        var store = await repoStore.FirstOrDefaultAsync(x => x.OwnerAccountId == currentUserId && !x.IsDeleted);
+
+        if (store is null)
+            return BaseResponse<OrderResponseDto>.Fail("Store not found");
+
+        var order = await repoOrder.FirstOrDefaultAsync(x =>
+            x.Id == id &&
+            x.StoreRefCode == store.RefCode);
+
+        if (order is null)
+            return BaseResponse<OrderResponseDto>.Fail("Order not found");
+
+        var account = order.CustomerAccountId != null
+            ? await repoAccount.FirstOrDefaultAsync(x => x.Id == order.CustomerAccountId)
+            : null;
+
+        var profile = account != null
+            ? await repoAccountProfile.FirstOrDefaultAsync(x => x.AccountId == account.Id)
+            : null;
+
+        var customer = account is null && order.CustomerId != null
+            ? await repoCustomer.FirstOrDefaultAsync(x => x.Id == order.CustomerId)
+            : null;
+
+        var customerName = account != null
+            ? (!string.IsNullOrEmpty(profile?.FullName) ? profile!.FullName : account.Username)
+            : (customer?.CustomerName ?? "Khách vãng lai");
+
+        var items = await (
+            from orderItem in repoOrderItem.Query().AsNoTracking()
+            join food in repoFood.Query().AsNoTracking()
+                on orderItem.StoreFoodId equals food.Id
+            where orderItem.OrderId == order.Id
+            select new OrderItemResponseDto
+            {
+                Id = orderItem.Id,
+                OrderId = orderItem.OrderId,
+                StoreFoodId = orderItem.StoreFoodId,
+                FoodName = food.FoodName,
+                ProductCode = food.ProductCode,
+                ThumbnailUrl = food.ThumbnailUrl,
+                Quantity = orderItem.Quantity,
+                UnitPrice = orderItem.UnitPrice,
+                TotalPrice = orderItem.TotalPrice,
+                OriginalUnitPrice = orderItem.OriginalUnitPrice,
+                PromotionId = orderItem.PromotionId,
+                PromotionName = orderItem.PromotionName
+            })
+            .ToListAsync();
+        await FillOrderItemOptionsAsync(items);
+
+        foreach (var item in items)
+        {
+            item.ThumbnailUrl = BuildFoodThumbnailUrl(item.ThumbnailUrl);
+        }
+
+        return BaseResponse<OrderResponseDto>.Success(new OrderResponseDto
+        {
+            Id = order.Id,
+            OrderCode = order.OrderCode,
+            RefCode = order.RefCode,
+            CustomerAccountId = (long)order.CustomerAccountId,
+            CustomerName = customerName,
+            StoreRefCode = order.StoreRefCode,
+            TotalAmount = order.TotalAmount,
+            OrderStatus = order.OrderStatus,
+            PaymentStatus = order.PaymentStatus,
+            PaymentMethod = order.PaymentMethod,
+            Note = order.Note,
+            CreatedAt = order.CreatedAt,
+            Items = items
+        });
+    }
+
+    private static IQueryable<Order> ApplyStatusFilter(IQueryable<Order> query, string? status)
+    {
+        return status switch
+        {
+            "CANCELLED" => query.Where(x => x.OrderStatus == "CANCELLED"),
+            "PAID" => query.Where(x => x.OrderStatus != "CANCELLED" && x.PaymentStatus == "PAID"),
+            "UNPAID" => query.Where(x => x.OrderStatus != "CANCELLED" && x.PaymentStatus == "UNPAID"),
+            _ => query
+        };
     }
 
     public async Task<BaseTableResponse<OrderResponseDto>> GetByStoreRefCodeAsync(BaseSearchRequest<OrderSearchRequest> request)
@@ -660,6 +778,8 @@ public class OrderService : IOrderService
                 search != null &&
                 !string.IsNullOrWhiteSpace(search.StoreRefCode) &&
                 x.StoreRefCode == search.StoreRefCode);
+
+        query = ApplyStatusFilter(query, search?.Status);
 
         if (!string.IsNullOrWhiteSpace(search?.OrderStatus))
         {
@@ -778,13 +898,23 @@ public class OrderService : IOrderService
                 OrderId = orderItem.OrderId,
                 StoreFoodId = orderItem.StoreFoodId,
                 FoodName = food.FoodName,
+                ProductCode = food.ProductCode,
+                ThumbnailUrl = food.ThumbnailUrl,
                 Quantity = orderItem.Quantity,
                 UnitPrice = orderItem.UnitPrice,
-                TotalPrice = orderItem.TotalPrice
+                TotalPrice = orderItem.TotalPrice,
+                OriginalUnitPrice = orderItem.OriginalUnitPrice,
+                PromotionId = orderItem.PromotionId,
+                PromotionName = orderItem.PromotionName
             })
             .ToListAsync();
 
         await FillOrderItemOptionsAsync(orderItems);
+
+        foreach (var item in orderItems)
+        {
+            item.ThumbnailUrl = BuildFoodThumbnailUrl(item.ThumbnailUrl);
+        }
 
         foreach (var order in items)
         {
@@ -824,6 +954,8 @@ public class OrderService : IOrderService
         {
             query = query.Where(x => x.StoreRefCode == search.StoreRefCode);
         }
+
+        query = ApplyStatusFilter(query, search?.Status);
 
         if (!string.IsNullOrWhiteSpace(search?.OrderStatus))
         {
@@ -944,13 +1076,23 @@ public class OrderService : IOrderService
                 OrderId = orderItem.OrderId,
                 StoreFoodId = orderItem.StoreFoodId,
                 FoodName = food.FoodName,
+                ProductCode = food.ProductCode,
+                ThumbnailUrl = food.ThumbnailUrl,
                 Quantity = orderItem.Quantity,
                 UnitPrice = orderItem.UnitPrice,
-                TotalPrice = orderItem.TotalPrice
+                TotalPrice = orderItem.TotalPrice,
+                OriginalUnitPrice = orderItem.OriginalUnitPrice,
+                PromotionId = orderItem.PromotionId,
+                PromotionName = orderItem.PromotionName
             })
             .ToListAsync();
 
         await FillOrderItemOptionsAsync(orderItems);
+
+        foreach (var item in orderItems)
+        {
+            item.ThumbnailUrl = BuildFoodThumbnailUrl(item.ThumbnailUrl);
+        }
 
         foreach (var order in items)
         {
@@ -1016,6 +1158,9 @@ public class OrderService : IOrderService
         if (request.NewStatus != "PAID" && request.NewStatus != "UNPAID")
             return BaseResponse<string>.Fail("Invalid payment status");
 
+        if (order.OrderStatus == "CANCELLED")
+            return BaseResponse<string>.Fail("Cannot update payment status of a cancelled order");
+
         if (order.PaymentStatus == request.NewStatus)
             return BaseResponse<string>.Fail("Payment status is already updated");
 
@@ -1049,7 +1194,8 @@ public class OrderService : IOrderService
                 currentUserId,
                 confirmerName,
                 "CONFIRM_PAYMENT",
-                $"Xác nhận thanh toán đơn hàng \"{order.OrderCode}\", tổng tiền {order.TotalAmount:N0}đ");
+                $"Xác nhận thanh toán đơn hàng \"{order.OrderCode}\", tổng tiền {order.TotalAmount:N0}đ",
+                order.StoreRefCode);
         }
 
         return BaseResponse<string>.Success("Update payment status successfully");
@@ -1070,6 +1216,10 @@ public class OrderService : IOrderService
 
         if (order.OrderStatus == "COMPLETED")
             return BaseResponse<string>.Fail("Cannot cancel a completed order");
+
+        // Đơn đã thanh toán không được huỷ (hệ thống không xử lý hoàn tiền).
+        if (order.PaymentStatus == "PAID")
+            return BaseResponse<string>.Fail("Cannot cancel a paid order");
 
         var oldStatus = order.OrderStatus;
 
@@ -1092,162 +1242,17 @@ public class OrderService : IOrderService
 
         await _unitOfWork.SaveChangesAsync();
 
+        var cancellerName = await GetCustomerDisplayNameAsync(currentUserId);
+
+        await _activityLogService.LogAsync(
+            "Agent",
+            currentUserId,
+            cancellerName,
+            "CANCEL_ORDER",
+            $"Huỷ đơn hàng \"{order.OrderCode}\", tổng tiền {order.TotalAmount:N0}đ",
+            order.StoreRefCode);
+
         return BaseResponse<string>.Success("Cancel order successfully");
-    }
-
-    public async Task<BaseResponse<byte[]>> PrintOrdersAsync(long currentUserId, PrintOrdersRequestDto request)
-    {
-        if (request.OrderIds == null || !request.OrderIds.Any())
-            return BaseResponse<byte[]>.Fail("Vui lòng chọn đơn hàng để in");
-
-        var orderIds = request.OrderIds
-            .Distinct()
-            .ToList();
-
-        var repoOrder = _unitOfWork.GetRepository<Order>();
-        var repoAccount = _unitOfWork.GetRepository<Account>();
-        var repoProfile = _unitOfWork.GetRepository<AccountProfile>();
-        var repoCustomer = _unitOfWork.GetRepository<Customer>();
-        var repoOrderItem = _unitOfWork.GetRepository<OrderItem>();
-        var repoOrderItemOption = _unitOfWork.GetRepository<OrderItemOption>();
-        var repoStoreFood = _unitOfWork.GetRepository<StoreFood>();
-
-        var orders = await repoOrder
-            .Query()
-            .AsNoTracking()
-            .Where(x => orderIds.Contains(x.Id))
-            .OrderByDescending(x => x.CreatedAt)
-            .ToListAsync();
-
-        if (!orders.Any())
-            return BaseResponse<byte[]>.Fail("Không tìm thấy đơn hàng");
-
-        var foundOrderIds = orders
-            .Select(x => x.Id)
-            .ToList();
-
-        var customerAccountIds = orders
-            .Where(x => x.CustomerAccountId.HasValue)
-            .Select(x => x.CustomerAccountId!.Value)
-            .Distinct()
-            .ToList();
-
-        var guestCustomerIds = orders
-            .Where(x => x.CustomerId.HasValue)
-            .Select(x => x.CustomerId!.Value)
-            .Distinct()
-            .ToList();
-
-        var accounts = await repoAccount
-            .Query()
-            .AsNoTracking()
-            .Where(x => customerAccountIds.Contains(x.Id))
-            .ToListAsync();
-
-        var profiles = await repoProfile
-            .Query()
-            .AsNoTracking()
-            .Where(x => customerAccountIds.Contains(x.AccountId))
-            .ToListAsync();
-
-        var customers = await repoCustomer
-            .Query()
-            .AsNoTracking()
-            .Where(x => guestCustomerIds.Contains(x.Id))
-            .ToListAsync();
-
-        var orderItems = await repoOrderItem
-            .Query()
-            .AsNoTracking()
-            .Where(x => foundOrderIds.Contains(x.OrderId))
-            .ToListAsync();
-
-        var storeFoodIds = orderItems
-            .Select(x => x.StoreFoodId)
-            .Distinct()
-            .ToList();
-
-        var storeFoods = await repoStoreFood
-            .Query()
-            .AsNoTracking()
-            .Where(x => storeFoodIds.Contains(x.Id))
-            .ToListAsync();
-
-        var orderItemIds = orderItems
-            .Select(x => x.Id)
-            .ToList();
-
-        var orderItemOptions = await repoOrderItemOption
-            .Query()
-            .AsNoTracking()
-            .Where(x => orderItemIds.Contains(x.OrderItemId))
-            .ToListAsync();
-
-        var models = orders.Select(order =>
-        {
-            var account = order.CustomerAccountId.HasValue
-                ? accounts.FirstOrDefault(x => x.Id == order.CustomerAccountId.Value)
-                : null;
-
-            var profile = order.CustomerAccountId.HasValue
-                ? profiles.FirstOrDefault(x => x.AccountId == order.CustomerAccountId.Value)
-                : null;
-
-            var customer = order.CustomerId.HasValue
-                ? customers.FirstOrDefault(x => x.Id == order.CustomerId.Value)
-                : null;
-
-            var items = orderItems
-                .Where(x => x.OrderId == order.Id)
-                .Select(item =>
-                {
-                    var food = storeFoods.FirstOrDefault(x => x.Id == item.StoreFoodId);
-
-                    var options = orderItemOptions
-                        .Where(x => x.OrderItemId == item.Id)
-                        .OrderBy(x => x.OptionGroupName)
-                        .ThenBy(x => x.OptionName)
-                        .Select(option => new PrintOrderItemOptionViewModel
-                        {
-                            GroupName = option.OptionGroupName,
-                            OptionName = option.OptionName,
-                            AdditionalPrice = option.AdditionalPrice
-                        })
-                        .ToList();
-
-                    return new PrintOrderItemViewModel
-                    {
-                        FoodName = food?.FoodName ?? "Không rõ món",
-                        Quantity = item.Quantity,
-                        UnitPrice = item.UnitPrice,
-                        TotalPrice = item.TotalPrice,
-                        Options = options
-                    };
-                })
-                .ToList();
-
-            return new PrintOrderViewModel
-            {
-                OrderCode = order.OrderCode,
-                CustomerName =
-                    profile?.FullName
-                    ?? account?.Username
-                    ?? customer?.CustomerName
-                    ?? "Người lạ",
-                CustomerPhone = profile?.PhoneNumber,
-                CustomerAddress = profile?.Address,
-                OrderStatus = order.OrderStatus,
-                PaymentStatus = order.PaymentStatus,
-                Note = order.Note,
-                TotalAmount = order.TotalAmount,
-                CreatedAt = order.CreatedAt,
-                Items = items
-            };
-        }).ToList();
-
-        var pdfBytes = await BuildOrdersPdfAsync(models);
-
-        return BaseResponse<byte[]>.Success(pdfBytes);
     }
 
     public async Task<BaseResponse<string>> GetPaymentStatusAsync(string orderCode)
@@ -1273,6 +1278,10 @@ public class OrderService : IOrderService
             }
         }
 
+        // Đơn đã bị hủy mà chưa thanh toán: trả "CANCELLED" để FE ngừng chờ/đóng popup QR.
+        if (order.PaymentStatus != "PAID" && order.OrderStatus == "CANCELLED")
+            return BaseResponse<string>.Success("CANCELLED");
+
         return BaseResponse<string>.Success(order.PaymentStatus);
     }
 
@@ -1287,6 +1296,8 @@ public class OrderService : IOrderService
                 on o.CustomerId equals c.Id
             where c.DeviceId == deviceId
                 && o.PaymentStatus == "UNPAID"
+                && o.PaymentMethod == "BANK_TRANSFER"
+                && o.OrderStatus != "CANCELLED"
                 && !o.IsDelete
             orderby o.CreatedAt descending
             select o
@@ -1300,10 +1311,6 @@ public class OrderService : IOrderService
         return BaseResponse<string?>.Success(order.OrderCode);
     }
 
-    // Plain class (not a record): AddAutoServices reflects over every class in this assembly and
-    // registers each interface it implements as a DI service — a record's auto-generated
-    // IEquatable<T> would get swept up and registered, and since it has no parameterless
-    // constructor DI fails to validate it at startup.
     private sealed class PromotionPricingContext
     {
         public PromotionPricingContext(
@@ -1327,9 +1334,9 @@ public class OrderService : IOrderService
         // PRODUCT_DISCOUNT dạng ApplyToAllProducts = true (khách tự chọn 1 món nhận giảm giá)
         public List<PromotionResponseDto> StoreWideDiscountPromotions { get; }
 
-        // StoreFoodId -> giá đã giảm, được điền bởi ValidateSelectedStoreWideDiscountsAsync
+        // StoreFoodId -> (giá đã giảm, khuyến mãi áp dụng), được điền bởi ValidateSelectedStoreWideDiscountsAsync
         // trước khi tính giá từng dòng đơn hàng.
-        public Dictionary<long, decimal> StoreWideDiscountOverrides { get; set; } = new();
+        public Dictionary<long, (decimal Price, long PromotionId, string PromotionName)> StoreWideDiscountOverrides { get; set; } = new();
     }
 
     /// <summary>
@@ -1399,16 +1406,17 @@ public class OrderService : IOrderService
     /// 1 đơn vị của món khách chọn (xem <see cref="ComputeLineTotal"/>), không áp cho cả dòng.
     /// Chỉ áp giá khuyến mãi nếu chương trình đó ĐÃ ĐẠT điều kiện (nếu có) trên toàn đơn hàng.
     /// </summary>
-    private static decimal GetBasePrice(StoreFood food, PromotionPricingContext context, decimal originalSubtotal, int totalQuantity)
+    private static (decimal Price, long? PromotionId, string? PromotionName) GetBasePrice(StoreFood food, PromotionPricingContext context, decimal originalSubtotal, int totalQuantity)
     {
         if (context.FixedPriceMap.TryGetValue(food.Id, out var fixedEntry) &&
             IsPromotionConditionMet(fixedEntry.Promotion, originalSubtotal, totalQuantity))
-            return fixedEntry.Price;
+            return (fixedEntry.Price, fixedEntry.Promotion.Id, fixedEntry.Promotion.Name);
 
         if (context.DiscountMap.TryGetValue(food.Id, out var discountEntry) &&
             IsPromotionConditionMet(discountEntry.Promotion, originalSubtotal, totalQuantity))
         {
             var discount = discountEntry.Item;
+            decimal price;
 
             if (discount.DiscountType == "PERCENT")
             {
@@ -1417,13 +1425,17 @@ public class OrderService : IOrderService
                 if (discount.MaxDiscountAmount.HasValue)
                     discountAmount = Math.Min(discountAmount, discount.MaxDiscountAmount.Value);
 
-                return Math.Max(food.Price - discountAmount, 0);
+                price = Math.Max(food.Price - discountAmount, 0);
+            }
+            else
+            {
+                price = Math.Max(food.Price - discount.DiscountValue, 0);
             }
 
-            return Math.Max(food.Price - discount.DiscountValue, 0);
+            return (price, discountEntry.Promotion.Id, discountEntry.Promotion.Name);
         }
 
-        return food.Price;
+        return (food.Price, null, null);
     }
 
     /// <summary>
@@ -1435,10 +1447,10 @@ public class OrderService : IOrderService
         StoreFood food, int quantity, decimal optionAmount, PromotionPricingContext context,
         decimal originalSubtotal, int totalQuantity)
     {
-        var basePrice = GetBasePrice(food, context, originalSubtotal, totalQuantity);
+        var (basePrice, _, _) = GetBasePrice(food, context, originalSubtotal, totalQuantity);
 
-        if (context.StoreWideDiscountOverrides.TryGetValue(food.Id, out var discountedUnitPrice))
-            return basePrice * (quantity - 1) + discountedUnitPrice + optionAmount * quantity;
+        if (context.StoreWideDiscountOverrides.TryGetValue(food.Id, out var overrideEntry))
+            return basePrice * (quantity - 1) + overrideEntry.Price + optionAmount * quantity;
 
         return (basePrice + optionAmount) * quantity;
     }
@@ -1495,14 +1507,14 @@ public class OrderService : IOrderService
     /// hiệu lực, và khách (theo tài khoản đăng nhập hoặc theo Customer/deviceId với khách vãng lai)
     /// chưa từng dùng promotion này trước đó — mỗi khách chỉ được dùng 1 lần.
     /// </summary>
-    private async Task<(Dictionary<long, decimal> Overrides, string? Error)> ValidateSelectedStoreWideDiscountsAsync(
+    private async Task<(Dictionary<long, (decimal Price, long PromotionId, string PromotionName)> Overrides, string? Error)> ValidateSelectedStoreWideDiscountsAsync(
         PromotionPricingContext context,
         List<SelectedStoreWideDiscountRequestDto>? selected,
         List<StoreFood> foods,
         long? customerAccountId,
         long? customerId)
     {
-        var overrides = new Dictionary<long, decimal>();
+        var overrides = new Dictionary<long, (decimal Price, long PromotionId, string PromotionName)>();
 
         if (selected is null || selected.Count == 0)
             return (overrides, null);
@@ -1546,7 +1558,7 @@ public class OrderService : IOrderService
             if (promotion.DiscountType == "PERCENT" && promotion.MaxDiscountAmount.HasValue)
                 discountAmount = Math.Min(discountAmount, promotion.MaxDiscountAmount.Value);
 
-            overrides[food.Id] = Math.Max(food.Price - discountAmount, 0);
+            overrides[food.Id] = (Math.Max(food.Price - discountAmount, 0), promotion.Id, promotion.Name);
         }
 
         return (overrides, null);
@@ -1604,15 +1616,17 @@ public class OrderService : IOrderService
         int totalQuantity)
     {
         var optionAmount = options?.Sum(x => x.AdditionalPrice) ?? 0;
-        var basePrice = GetBasePrice(food, context, originalSubtotal, totalQuantity);
+        var (basePrice, basePromotionId, basePromotionName) = GetBasePrice(food, context, originalSubtotal, totalQuantity);
+        var originalUnitPrice = food.Price + optionAmount;
 
-        if (context.StoreWideDiscountOverrides.TryGetValue(food.Id, out var discountedUnitPrice))
+        if (context.StoreWideDiscountOverrides.TryGetValue(food.Id, out var overrideEntry))
         {
-            var discountedLineUnitPrice = discountedUnitPrice + optionAmount;
+            var discountedLineUnitPrice = overrideEntry.Price + optionAmount;
 
             await AddSingleOrderItemAsync(
                 repoOrderItem, repoOrderItemOption, refCode, orderId, food.Id,
-                1, discountedLineUnitPrice, discountedLineUnitPrice, options, currentUserId);
+                1, discountedLineUnitPrice, discountedLineUnitPrice, originalUnitPrice,
+                overrideEntry.PromotionId, overrideEntry.PromotionName, options, currentUserId);
 
             if (quantity > 1)
             {
@@ -1621,7 +1635,8 @@ public class OrderService : IOrderService
 
                 await AddSingleOrderItemAsync(
                     repoOrderItem, repoOrderItemOption, refCode, orderId, food.Id,
-                    remainingQuantity, remainingUnitPrice, remainingUnitPrice * remainingQuantity, options, currentUserId);
+                    remainingQuantity, remainingUnitPrice, remainingUnitPrice * remainingQuantity, originalUnitPrice,
+                    basePromotionId, basePromotionName, options, currentUserId);
             }
         }
         else
@@ -1630,7 +1645,8 @@ public class OrderService : IOrderService
 
             await AddSingleOrderItemAsync(
                 repoOrderItem, repoOrderItemOption, refCode, orderId, food.Id,
-                quantity, unitPrice, unitPrice * quantity, options, currentUserId);
+                quantity, unitPrice, unitPrice * quantity, originalUnitPrice,
+                basePromotionId, basePromotionName, options, currentUserId);
         }
     }
 
@@ -1643,6 +1659,9 @@ public class OrderService : IOrderService
         int quantity,
         decimal unitPrice,
         decimal totalPrice,
+        decimal originalUnitPrice,
+        long? promotionId,
+        string? promotionName,
         List<CreateOrderItemOptionRequestDto>? options,
         long? currentUserId)
     {
@@ -1654,6 +1673,9 @@ public class OrderService : IOrderService
             Quantity = quantity,
             UnitPrice = unitPrice,
             TotalPrice = totalPrice,
+            OriginalUnitPrice = originalUnitPrice,
+            PromotionId = promotionId,
+            PromotionName = promotionName,
             CreatedAt = DateTimeHelper.VnNow,
             CreatedBy = currentUserId
         };
@@ -1767,11 +1789,6 @@ public class OrderService : IOrderService
         return $"EMF{DateTimeHelper.VnNow:yyMMdd-HHmmss}-{randomPart}";
     }
 
-    private string FormatCurrency(decimal value)
-    {
-        return $"{value:N0}đ";
-    }
-
     private async Task<byte[]?> TryDownloadImageAsync(string? imageUrl)
     {
         if (string.IsNullOrWhiteSpace(imageUrl))
@@ -1786,199 +1803,6 @@ public class OrderService : IOrderService
             return null;
         }
     }
-
-    private async Task<byte[]> BuildOrdersPdfAsync(List<PrintOrderViewModel> orders)
-    {
-        QuestPDF.Settings.License = LicenseType.Community;
-
-        var orderedOrders = orders
-            .OrderBy(x => x.CreatedAt)
-            .ToList();
-
-        var grandTotal = orderedOrders.Sum(x => x.TotalAmount);
-        var totalOrders = orderedOrders.Count;
-        var totalItems = orderedOrders.Sum(x => x.Items.Sum(i => i.Quantity));
-
-        var summaryItems = orderedOrders
-            .SelectMany(x => x.Items)
-            .GroupBy(x => x.FoodName)
-            .Select(x => new
-            {
-                FoodName = x.Key,
-                TotalQuantity = x.Sum(i => i.Quantity)
-            })
-            .OrderBy(x => x.FoodName)
-            .ToList();
-
-        return Document.Create(container =>
-        {
-            container.Page(page =>
-            {
-                page.Size(PageSizes.A4);
-                page.Margin(28);
-                page.DefaultTextStyle(x => x.FontSize(9));
-
-                page.Header().Column(header =>
-                {
-                    header.Item().AlignCenter().Text("DANH SÁCH ĐƠN HÀNG")
-                        .Bold()
-                        .FontSize(16);
-
-                    header.Item().AlignCenter()
-                        .Text($"Ngày in: {DateTimeHelper.VnNow:dd/MM/yyyy HH:mm}")
-                        .FontSize(9)
-                        .FontColor(Colors.Grey.Darken1);
-                });
-
-                page.Content().PaddingTop(18).Column(column =>
-                {
-                    //-----------------------------------
-                    // Tổng hợp
-                    //-----------------------------------
-
-                    column.Item()
-                        .Text("TỔNG HỢP MÓN")
-                        .Bold()
-                        .FontSize(13);
-
-                    column.Item().PaddingTop(8);
-
-                    foreach (var summary in summaryItems)
-                    {
-                        column.Item()
-                            .PaddingBottom(3)
-                            .Text($"{summary.TotalQuantity}x  {summary.FoodName}")
-                            .SemiBold()
-                            .FontSize(10);
-                    }
-
-                    column.Item().PaddingVertical(14);
-
-                    //-----------------------------------
-                    // Chi tiết
-                    //-----------------------------------
-
-                    column.Item()
-                        .Text("CHI TIẾT ĐƠN")
-                        .Bold()
-                        .FontSize(13);
-
-                    column.Item().PaddingTop(10);
-
-                    foreach (var order in orderedOrders)
-                    {
-                        column.Item().PaddingBottom(12);
-
-                        // Tên khách
-                        column.Item()
-                            .Text(order.CustomerName)
-                            .Bold()
-                            .FontSize(12);
-
-                        if (!string.IsNullOrWhiteSpace(order.Note))
-                        {
-                            column.Item()
-                                .PaddingTop(2)
-                                .PaddingBottom(4)
-                                .Text($"Ghi chú: {order.Note}")
-                                .FontSize(10)
-                                .FontColor(Colors.Grey.Darken2);
-                        }
-
-                        foreach (var item in order.Items)
-                        {
-                            column.Item().PaddingTop(5).Column(itemColumn =>
-                            {
-                                itemColumn.Item().Row(row =>
-                                {
-                                    row.ConstantItem(28)
-                                        .Text($"{item.Quantity}x")
-                                        .SemiBold();
-
-                                    row.RelativeItem()
-                                        .Text(item.FoodName)
-                                        .SemiBold()
-                                        .FontSize(10);
-
-                                    row.ConstantItem(80)
-                                        .AlignRight()
-                                        .Text(FormatCurrency(item.UnitPrice))
-                                        .FontSize(10);
-                                });
-
-                                if (item.Options?.Any() == true)
-                                {
-                                    foreach (var option in item.Options)
-                                    {
-                                        var price = option.AdditionalPrice > 0
-                                            ? $" (+{FormatCurrency(option.AdditionalPrice)})"
-                                            : "";
-
-                                        itemColumn.Item()
-                                            .PaddingLeft(28)
-                                            .PaddingTop(1)
-                                            .Text($"{option.GroupName}: {option.OptionName}{price}")
-                                            .FontSize(10)
-                                            .FontColor(Colors.Grey.Darken1);
-                                    }
-                                }
-                            });
-                        }
-
-                        column.Item().PaddingBottom(8);
-                    }
-                });
-
-                page.Footer().Column(footer =>
-                {
-                    footer.Item().PaddingTop(8);
-
-                    footer.Item().Row(row =>
-                    {
-                        row.RelativeItem()
-                            .Text("TỔNG CỘNG")
-                            .SemiBold()
-                            .FontSize(11);
-
-                        row.ConstantItem(120)
-                            .AlignRight()
-                            .Text(FormatCurrency(grandTotal))
-                            .Bold()
-                            .FontSize(15);
-                    });
-
-                    footer.Item()
-                        .PaddingTop(4)
-                        .Text($"{totalOrders} đơn • {totalItems} món")
-                        .AlignRight()
-                        .FontSize(9)
-                        .FontColor(Colors.Grey.Darken1);
-                });
-            });
-        }).GeneratePdf();
-    }
-
-    //private string GetOptionKey(List<PrintOrderItemOptionViewModel>? options)
-    //{
-    //    if (options == null || !options.Any())
-    //        return "";
-
-    //    return string.Join(" | ", options
-    //        .OrderBy(x => x.GroupName)
-    //        .ThenBy(x => x.OptionName)
-    //        .Select(x => $"{x.GroupName}:{x.OptionName}"));
-    //}
-
-    //private string GetOptionDisplay(List<PrintOrderItemOptionViewModel>? options)
-    //{
-    //    if (options == null || !options.Any())
-    //        return "không option";
-
-    //    return string.Join(", ", options
-    //        .OrderBy(x => x.GroupName)
-    //        .ThenBy(x => x.OptionName)
-    //        .Select(x => x.OptionName));
-    //}
 
     private static string GenerateCustomerCode()
     {

@@ -1,6 +1,7 @@
 using FoodEmolite.Shared.Common;
 using FoodEmolite.Application.DTOs.StoreFood;
 using FoodEmolite.Application.ExternalService.Interfaces;
+using FoodEmolite.Application.Helpers;
 using FoodEmolite.Application.Interfaces;
 using FoodEmolite.Domain.Entities;
 using FoodEmolite.Domain.Interfaces;
@@ -14,13 +15,16 @@ public class StoreFoodService : IStoreFoodService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICloudinaryService _cloudinaryService;
+    private readonly IActivityLogService _activityLogService;
 
     public StoreFoodService(
         IUnitOfWork unitOfWork,
-        ICloudinaryService cloudinaryService)
+        ICloudinaryService cloudinaryService,
+        IActivityLogService activityLogService)
     {
         _unitOfWork = unitOfWork;
         _cloudinaryService = cloudinaryService;
+        _activityLogService = activityLogService;
     }
 
     public async Task<BaseResponse<string>> CreateAsync(string refCode, CreateStoreFoodRequestDto request)
@@ -36,6 +40,25 @@ public class StoreFoodService : IStoreFoodService
 
         if (store is null)
             return BaseResponse<string>.Fail("Store not found");
+
+        string productCode;
+
+        if (!string.IsNullOrWhiteSpace(request.ProductCode))
+        {
+            productCode = request.ProductCode.Trim();
+
+            var codeExisted = await repoStoreFood.AnyAsync(x =>
+                x.StoreRefCode == request.StoreRefCode &&
+                x.ProductCode == productCode &&
+                !x.IsDeleted);
+
+            if (codeExisted)
+                return BaseResponse<string>.Fail("Mã sản phẩm đã tồn tại");
+        }
+        else
+        {
+            productCode = await GenerateNextProductCodeAsync(repoStoreFood, request.StoreRefCode);
+        }
 
         string? thumbnailFileRefCode = null;
 
@@ -54,6 +77,7 @@ public class StoreFoodService : IStoreFoodService
             RefCode = refCode,
             StoreRefCode = request.StoreRefCode,
             FoodName = request.FoodName,
+            ProductCode = productCode,
             ThumbnailUrl = thumbnailFileRefCode,
             Description = request.Description,
             Price = request.Price,
@@ -108,6 +132,8 @@ public class StoreFoodService : IStoreFoodService
             await _unitOfWork.SaveChangesAsync();
         }
 
+        await _activityLogService.LogAgentActionAsync(null, refCode, "CREATE_FOOD", $"Thêm món \"{storeFood.FoodName}\"", storeFood.StoreRefCode);
+
         return BaseResponse<string>.Success("Create store food successfully");
     }
 
@@ -124,6 +150,25 @@ public class StoreFoodService : IStoreFoodService
         if (storeFood is null)
             return BaseResponse<string>.Fail("Store food not found");
 
+        var oldFoodName = storeFood.FoodName;
+        var changes = new ChangeSummary();
+
+        if (string.IsNullOrWhiteSpace(request.ProductCode))
+            return BaseResponse<string>.Fail("Mã sản phẩm không được để trống");
+
+        var newProductCode = request.ProductCode.Trim();
+
+        var productCodeExisted = await repoStoreFood.AnyAsync(x =>
+            x.StoreRefCode == storeFood.StoreRefCode &&
+            x.ProductCode == newProductCode &&
+            x.Id != id &&
+            !x.IsDeleted);
+
+        if (productCodeExisted)
+            return BaseResponse<string>.Fail("Mã sản phẩm đã tồn tại");
+
+        changes.Text("Mã sản phẩm", storeFood.ProductCode, newProductCode);
+
         if (request.ThumbnailFile != null && request.ThumbnailFile.Length > 0)
         {
             var uploadResult = await _cloudinaryService.UploadProductImageAsync(request.ThumbnailFile);
@@ -132,9 +177,27 @@ public class StoreFoodService : IStoreFoodService
                 return BaseResponse<string>.Fail(uploadResult.Message);
 
             storeFood.ThumbnailUrl = uploadResult.Data;
+            changes.Note("Đổi ảnh món");
+        }
+
+        changes
+            .Text("Tên", storeFood.FoodName, request.FoodName)
+            .Text("Mô tả", storeFood.Description, request.Description)
+            .Money("Giá", storeFood.Price, request.Price)
+            .Number("Số lượng", storeFood.Quantity, request.Quantity)
+            .Flag("Trạng thái", storeFood.IsAvailable, request.IsAvailable, "Đang bán", "Ngừng bán");
+
+        if (storeFood.StoreFoodCategoryId != request.StoreFoodCategoryId)
+        {
+            var repoCategory = _unitOfWork.GetRepository<StoreFoodCategories>();
+            var oldCategory = await repoCategory.FirstOrDefaultAsync(x => x.Id == storeFood.StoreFoodCategoryId);
+            var newCategory = await repoCategory.FirstOrDefaultAsync(x => x.Id == request.StoreFoodCategoryId);
+
+            changes.Text("Danh mục", oldCategory?.CategoryName, newCategory?.CategoryName);
         }
 
         storeFood.FoodName = request.FoodName;
+        storeFood.ProductCode = newProductCode;
         storeFood.Description = request.Description;
         storeFood.Price = request.Price;
         storeFood.Quantity = request.Quantity;
@@ -186,6 +249,22 @@ public class StoreFoodService : IStoreFoodService
                     if (optionGroup is null)
                         continue;
 
+                    if (groupRequest.IsDeleted)
+                    {
+                        if (!optionGroup.IsDeleted)
+                            changes.Note($"Xoá nhóm tuỳ chọn \"{optionGroup.GroupName}\"");
+                    }
+                    else
+                    {
+                        var groupLabel = $"Nhóm tuỳ chọn \"{optionGroup.GroupName}\"";
+
+                        changes
+                            .Text($"{groupLabel} - tên", optionGroup.GroupName, groupRequest.GroupName)
+                            .Flag($"{groupLabel} - bắt buộc chọn", optionGroup.IsRequired, groupRequest.IsRequired, "Có", "Không")
+                            .Number($"{groupLabel} - chọn tối thiểu", optionGroup.MinSelect, groupRequest.MinSelect)
+                            .Number($"{groupLabel} - chọn tối đa", optionGroup.MaxSelect, groupRequest.MaxSelect);
+                    }
+
                     optionGroup.GroupName = groupRequest.GroupName;
                     optionGroup.IsRequired = groupRequest.IsRequired;
                     optionGroup.MinSelect = groupRequest.MinSelect;
@@ -217,6 +296,8 @@ public class StoreFoodService : IStoreFoodService
                     if (groupRequest.IsDeleted)
                         continue;
 
+                    changes.Note($"Thêm nhóm tuỳ chọn \"{groupRequest.GroupName}\"");
+
                     optionGroup = new StoreFoodOptionGroup
                     {
                         RefCode = refCode,
@@ -246,6 +327,21 @@ public class StoreFoodService : IStoreFoodService
                         if (option is null)
                             continue;
 
+                        if (optionRequest.IsDeleted)
+                        {
+                            if (!option.IsDeleted)
+                                changes.Note($"Xoá tuỳ chọn \"{option.OptionName}\" khỏi nhóm \"{optionGroup?.GroupName}\"");
+                        }
+                        else
+                        {
+                            var optionLabel = $"Tuỳ chọn \"{option.OptionName}\"";
+
+                            changes
+                                .Text($"{optionLabel} - tên", option.OptionName, optionRequest.OptionName)
+                                .Money($"{optionLabel} - giá cộng thêm", option.AdditionalPrice, optionRequest.AdditionalPrice)
+                                .Flag($"{optionLabel} - trạng thái", option.IsAvailable, optionRequest.IsAvailable, "Đang bán", "Ngừng bán");
+                        }
+
                         option.OptionName = optionRequest.OptionName;
                         option.AdditionalPrice = optionRequest.AdditionalPrice;
                         option.IsAvailable = optionRequest.IsAvailable;
@@ -259,6 +355,8 @@ public class StoreFoodService : IStoreFoodService
                     {
                         if (optionRequest.IsDeleted)
                             continue;
+
+                        changes.Note($"Thêm tuỳ chọn \"{optionRequest.OptionName}\" (+{optionRequest.AdditionalPrice:N0}đ) vào nhóm \"{optionGroup?.GroupName}\"");
 
                         var option = new StoreFoodOption
                         {
@@ -280,10 +378,12 @@ public class StoreFoodService : IStoreFoodService
 
         await _unitOfWork.SaveChangesAsync();
 
+        await _activityLogService.LogAgentActionAsync(null, refCode, "UPDATE_FOOD", changes.Describe($"Cập nhật món \"{oldFoodName}\""), storeFood.StoreRefCode);
+
         return BaseResponse<string>.Success("Update store food successfully");
     }
 
-    public async Task<BaseResponse<string>> DeleteAsync(long id)
+    public async Task<BaseResponse<string>> DeleteAsync(string refCode, long id)
     {
         var repoStoreFood = _unitOfWork.GetRepository<StoreFood>();
         var repoOptionGroup = _unitOfWork.GetRepository<StoreFoodOptionGroup>();
@@ -325,6 +425,8 @@ public class StoreFoodService : IStoreFoodService
 
         repoStoreFood.Update(storeFood);
         await _unitOfWork.SaveChangesAsync();
+
+        await _activityLogService.LogAgentActionAsync(null, refCode, "DELETE_FOOD", $"Xoá món \"{storeFood.FoodName}\"", storeFood.StoreRefCode);
 
         return BaseResponse<string>.Success("Delete store food successfully");
     }
@@ -402,6 +504,7 @@ public class StoreFoodService : IStoreFoodService
             StoreName = x.StoreName,
             StoreFoodCategoryId = x.StoreFood.StoreFoodCategoryId,
             FoodName = x.StoreFood.FoodName,
+            ProductCode = x.StoreFood.ProductCode,
             ThumbnailUrl = !string.IsNullOrWhiteSpace(x.StoreFood.ThumbnailUrl)
                 ? _cloudinaryService.BuildImageUrl(x.StoreFood.ThumbnailUrl)
                 : null,
@@ -478,6 +581,11 @@ public class StoreFoodService : IStoreFoodService
                 x.StoreFoodCategoryId == searchParams.StoreFoodCategoryId.Value);
         }
 
+        if (searchParams.IsAvailable.HasValue)
+        {
+            query = query.Where(x => x.IsAvailable == searchParams.IsAvailable.Value);
+        }
+
         var totalRecords = await query.CountAsync();
 
         query = request.SortBy switch
@@ -533,6 +641,7 @@ public class StoreFoodService : IStoreFoodService
             StoreRefCode = food.StoreRefCode,
             StoreFoodCategoryId = food.StoreFoodCategoryId,
             FoodName = food.FoodName,
+            ProductCode = food.ProductCode,
             ThumbnailUrl = !string.IsNullOrWhiteSpace(food.ThumbnailUrl)
                 ? _cloudinaryService.BuildImageUrl(food.ThumbnailUrl)
                 : null,
@@ -609,6 +718,7 @@ public class StoreFoodService : IStoreFoodService
             RefCode = storeFood.RefCode,
             StoreRefCode = storeFood.StoreRefCode,
             FoodName = storeFood.FoodName,
+            ProductCode = storeFood.ProductCode,
             ThumbnailUrl = !string.IsNullOrWhiteSpace(storeFood.ThumbnailUrl)
                 ? _cloudinaryService.BuildImageUrl(storeFood.ThumbnailUrl)
                 : null,
@@ -642,5 +752,23 @@ public class StoreFoodService : IStoreFoodService
         };
 
         return BaseResponse<StoreFoodResponseDto>.Success(response);
+    }
+
+    private static async Task<string> GenerateNextProductCodeAsync(IRepository<StoreFood> repoStoreFood, string storeRefCode)
+    {
+        const string prefix = "SP";
+
+        var existingCodes = await repoStoreFood.Query()
+            .AsNoTracking()
+            .Where(x => x.StoreRefCode == storeRefCode && x.ProductCode != null && x.ProductCode.StartsWith(prefix))
+            .Select(x => x.ProductCode)
+            .ToListAsync();
+
+        var maxNumber = existingCodes
+            .Select(code => int.TryParse(code.Substring(prefix.Length), out var number) ? number : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        return $"{prefix}{(maxNumber + 1):D5}";
     }
 }   
