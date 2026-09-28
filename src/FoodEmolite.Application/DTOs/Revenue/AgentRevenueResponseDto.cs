@@ -9,6 +9,7 @@ namespace FoodEmolite.Application.DTOs.Revenue
     public class AgentRevenueResponseDto
     {
         public int TotalOrders { get; set; }
+        public int TotalCancelledOrders { get; set; }
         public decimal TotalRevenue { get; set; }
 
         public List<RevenueLineChartDto> LineChart { get; set; } = [];

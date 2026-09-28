@@ -901,6 +901,40 @@ public class PromotionService : IPromotionService
             (excludePromotionId == null || x.Id != excludePromotionId.Value));
     }
 
+    public async Task<BaseResponse<PromotionStatsResponseDto>> GetStatsAsync(long currentUserId, long id)
+    {
+        var (_, promotion, error) = await GetOwnedPromotionAsync(currentUserId, id);
+
+        if (error != null)
+            return BaseResponse<PromotionStatsResponseDto>.Fail(error);
+
+        var orders = _unitOfWork.GetRepository<Order>().Query().AsNoTracking()
+            .Where(o => !o.IsDelete && o.OrderStatus != "CANCELLED");
+
+        var promotionItems = _unitOfWork.GetRepository<OrderItem>().Query().AsNoTracking()
+            .Where(i => i.PromotionId == promotion!.Id);
+
+        var itemRows =
+            from item in promotionItems
+            join order in orders on item.OrderId equals order.Id
+            select item;
+
+        var usedOrders = orders.Where(o => promotionItems.Any(i => i.OrderId == o.Id));
+
+        var stats = new PromotionStatsResponseDto
+        {
+            OrderCount = await usedOrders.CountAsync(),
+            UsageCount = await itemRows.SumAsync(i => (int?)i.Quantity) ?? 0,
+            Revenue = await usedOrders.SumAsync(o => (decimal?)o.TotalAmount) ?? 0,
+            PaidRevenue = await usedOrders.Where(o => o.PaymentStatus == "PAID").SumAsync(o => (decimal?)o.TotalAmount) ?? 0,
+            DiscountAmount = await itemRows
+                .Where(i => i.OriginalUnitPrice > i.UnitPrice)
+                .SumAsync(i => (decimal?)((i.OriginalUnitPrice - i.UnitPrice) * i.Quantity)) ?? 0
+        };
+
+        return BaseResponse<PromotionStatsResponseDto>.Success(stats);
+    }
+
     private async Task<(Store? Store, Promotion? Promotion, string? Error)> GetOwnedPromotionAsync(long currentUserId, long id)
     {
         var repoStore = _unitOfWork.GetRepository<Store>();

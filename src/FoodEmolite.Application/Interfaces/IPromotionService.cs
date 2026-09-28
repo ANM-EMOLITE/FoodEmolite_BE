@@ -10,6 +10,9 @@ public interface IPromotionService
 
     Task<BaseResponse<PromotionResponseDto>> GetDetailAsync(long currentUserId, long id);
 
+    /// <summary>Thống kê chương trình: số đơn sử dụng, lượt sử dụng, doanh thu và tổng tiền đã giảm (không tính đơn huỷ).</summary>
+    Task<BaseResponse<PromotionStatsResponseDto>> GetStatsAsync(long currentUserId, long id);
+
     /// <summary>
     /// Danh sách promotion đang ACTIVE của 1 cửa hàng — công khai, dùng cho trang khách hàng
     /// hiển thị giá khuyến mãi và tính giá khi tạo đơn.
