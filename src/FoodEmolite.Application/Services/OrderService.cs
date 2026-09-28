@@ -538,7 +538,7 @@ public class OrderService : IOrderService
                  Id = order.Id,
                  OrderCode = order.OrderCode,
                  RefCode = order.RefCode,
-                 CustomerAccountId = (long)order.CustomerAccountId,
+                 CustomerAccountId = order.CustomerAccountId,
 
                  CustomerName =
                      profile != null && !string.IsNullOrEmpty(profile.FullName)
@@ -650,7 +650,7 @@ public class OrderService : IOrderService
             Id = order.Id,
             OrderCode = order.OrderCode,
             RefCode = order.RefCode,
-            CustomerAccountId = (long)order.CustomerAccountId,
+            CustomerAccountId = order.CustomerAccountId,
             StoreRefCode = order.StoreRefCode,
             TotalAmount = order.TotalAmount,
             OrderStatus = order.OrderStatus,
@@ -733,7 +733,7 @@ public class OrderService : IOrderService
             Id = order.Id,
             OrderCode = order.OrderCode,
             RefCode = order.RefCode,
-            CustomerAccountId = (long)order.CustomerAccountId,
+            CustomerAccountId = order.CustomerAccountId,
             CustomerName = customerName,
             StoreRefCode = order.StoreRefCode,
             TotalAmount = order.TotalAmount,
@@ -824,7 +824,7 @@ public class OrderService : IOrderService
                 OrderCode = order.OrderCode,
                 RefCode = order.RefCode,
 
-                CustomerAccountId = (long)order.CustomerAccountId,
+                CustomerAccountId = order.CustomerAccountId,
 
                 CustomerName =
                     account != null
@@ -1000,7 +1000,7 @@ public class OrderService : IOrderService
                 OrderCode = order.OrderCode,
                 RefCode = order.RefCode,
 
-                CustomerAccountId = (long)order.CustomerAccountId,
+                CustomerAccountId = order.CustomerAccountId,
 
                 CustomerName =
                     account != null
