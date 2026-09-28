@@ -17,5 +17,11 @@ namespace FoodEmolite.Application.DTOs.Order
 
         /// <summary>Trạng thái gộp hiển thị cho đại lý: UNPAID | PAID | CANCELLED (đơn đã huỷ luôn tính là CANCELLED).</summary>
         public string? Status { get; set; }
+
+        /// <summary>Loại khuyến mãi đã áp trong đơn: FIXED_PRICE | PRODUCT_DISCOUNT | BUY_X_GET_Y | NONE (đơn không có khuyến mãi).</summary>
+        public string? PromotionType { get; set; }
+
+        /// <summary>Từ khoá lọc theo tên / mã khuyến mãi đã áp trong đơn.</summary>
+        public string? PromotionKeyword { get; set; }
     }
 }

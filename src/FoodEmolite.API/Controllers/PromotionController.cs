@@ -34,6 +34,14 @@ public class PromotionController : BaseApiController
         return Ok(result);
     }
 
+    [HttpGet("{id}/stats")]
+    public async Task<IActionResult> GetStats(long id)
+    {
+        var result = await _promotionService.GetStatsAsync(CurrentUserId!.Value, id);
+
+        return Ok(result);
+    }
+
     [AllowAnonymous]
     [HttpGet("store/{storeRefCode}/active")]
     public async Task<IActionResult> GetActiveByStore(string storeRefCode)

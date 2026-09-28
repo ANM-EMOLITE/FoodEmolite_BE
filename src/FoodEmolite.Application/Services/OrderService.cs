@@ -24,6 +24,7 @@ public class OrderService : IOrderService
     private readonly IPromotionService _promotionService;
     private readonly IActivityLogService _activityLogService;
     private readonly ICloudinaryService _cloudinaryService;
+    private readonly IStoreNotificationService _storeNotificationService;
 
     public OrderService(
         IUnitOfWork unitOfWork,
@@ -31,7 +32,8 @@ public class OrderService : IOrderService
         IRealtimeNotificationService realtimeNotificationService,
         IPromotionService promotionService,
         IActivityLogService activityLogService,
-        ICloudinaryService cloudinaryService)
+        ICloudinaryService cloudinaryService,
+        IStoreNotificationService storeNotificationService)
     {
         _unitOfWork = unitOfWork;
         _httpContextAccessor = httpContextAccessor;
@@ -39,10 +41,10 @@ public class OrderService : IOrderService
         _promotionService = promotionService;
         _activityLogService = activityLogService;
         _cloudinaryService = cloudinaryService;
+        _storeNotificationService = storeNotificationService;
     }
 
-    private string? BuildFoodThumbnailUrl(string? thumbnailRefCode) =>
-        !string.IsNullOrWhiteSpace(thumbnailRefCode) ? _cloudinaryService.BuildImageUrl(thumbnailRefCode) : null;
+    private string? BuildFoodThumbnailUrl(string? thumbnailRefCode) => !string.IsNullOrWhiteSpace(thumbnailRefCode) ? _cloudinaryService.BuildImageUrl(thumbnailRefCode) : null;
 
     public async Task<BaseResponse<CreateOrderResponseDto>> CreateAsync(long currentUserId, string refCode, CreateOrderRequestDto request)
     {
@@ -54,7 +56,7 @@ public class OrderService : IOrderService
         var repoOrderHistory = _unitOfWork.GetRepository<OrderHistory>();
 
         if (request.Items == null || !request.Items.Any())
-            return BaseResponse<CreateOrderResponseDto>.Fail("Order item is required");
+            return BaseResponse<CreateOrderResponseDto>.Fail("Sản phẩm trong đơn bắt buộc tồn tại");
 
         if (request.Items.Any(x => x.Quantity <= 0))
             return BaseResponse<CreateOrderResponseDto>.Fail("Quantity must be greater than 0");
@@ -69,6 +71,9 @@ public class OrderService : IOrderService
 
         if (store is null)
             return BaseResponse<CreateOrderResponseDto>.Fail("Store not found");
+
+        // Chủ cửa hàng tự tạo đơn (bán tại quầy / POS): đơn đứng tên chủ cửa hàng, log ghi là chủ cửa hàng tạo đơn.
+        var isStoreOwner = store.OwnerAccountId == currentUserId;
 
         var storeFoodIds = request.Items
             .Select(x => x.StoreFoodId)
@@ -103,7 +108,7 @@ public class OrderService : IOrderService
             return BaseResponse<CreateOrderResponseDto>.Fail(promoCodeError ?? "Không tải được thông tin khuyến mãi");
 
         var (storeWideDiscountOverrides, storeWideDiscountError) = await ValidateSelectedStoreWideDiscountsAsync(
-            promotionContext, request.SelectedStoreWideDiscounts, foods, currentUserId, null);
+            promotionContext, request.SelectedStoreWideDiscounts, foods, currentUserId, null, bypassCustomerLimit: isStoreOwner);
 
         if (storeWideDiscountError != null)
             return BaseResponse<CreateOrderResponseDto>.Fail(storeWideDiscountError);
@@ -231,16 +236,29 @@ public class OrderService : IOrderService
 
         await SavePromotionRedemptionsAsync(request.SelectedStoreWideDiscounts, promotionContext, order.Id, currentUserId, null);
 
-        var customerDisplayName = await GetCustomerDisplayNameAsync(currentUserId);
+        var actorDisplayName = await GetCustomerDisplayNameAsync(currentUserId);
 
-        await BroadcastNewOrderAsync(order, customerDisplayName);
+        await BroadcastNewOrderAsync(order, actorDisplayName);
 
-        await _activityLogService.LogAsync(
-            "Customer",
-            currentUserId,
-            customerDisplayName,
-            "CREATE_ORDER",
-            $"Tạo đơn hàng \"{order.OrderCode}\" tại cửa hàng \"{store.StoreName}\", tổng tiền {order.TotalAmount:N0}đ");
+        if (isStoreOwner)
+        {
+            await _activityLogService.LogAsync(
+                "Agent",
+                currentUserId,
+                actorDisplayName,
+                "CREATE_ORDER",
+                $"Chủ cửa hàng tạo đơn hàng \"{order.OrderCode}\" tại quầy (POS), tổng tiền {order.TotalAmount:N0}đ",
+                store.RefCode);
+        }
+        else
+        {
+            await _activityLogService.LogAsync(
+                "Customer",
+                currentUserId,
+                actorDisplayName,
+                "CREATE_ORDER",
+                $"Tạo đơn hàng \"{order.OrderCode}\" tại cửa hàng \"{store.StoreName}\", tổng tiền {order.TotalAmount:N0}đ");
+        }
 
         return BaseResponse<CreateOrderResponseDto>.Success(
             new CreateOrderResponseDto
@@ -757,6 +775,48 @@ public class OrderService : IOrderService
         };
     }
 
+    /// <summary>
+    /// Lọc đơn theo khuyến mãi đã áp trên món:
+    /// - promotionType: FIXED_PRICE | PRODUCT_DISCOUNT | BUY_X_GET_Y (đơn có ít nhất 1 món áp KM loại này) | NONE (đơn không có món nào áp KM).
+    /// - promotionKeyword: đơn có ít nhất 1 món áp KM có tên (snapshot trên món) hoặc mã KM chứa từ khoá.
+    /// </summary>
+    private static IQueryable<Order> ApplyPromotionFilter(
+        IQueryable<Order> query,
+        string? promotionType,
+        string? promotionKeyword,
+        IQueryable<OrderItem> orderItems,
+        IQueryable<Promotion> promotions)
+    {
+        if (promotionType == "NONE")
+        {
+            query = query.Where(o => !orderItems.Any(i => i.OrderId == o.Id && i.PromotionId != null));
+        }
+        else if (!string.IsNullOrWhiteSpace(promotionType))
+        {
+            query = query.Where(o => orderItems.Any(i =>
+                i.OrderId == o.Id &&
+                promotions.Any(p => p.Id == i.PromotionId && p.PromotionType == promotionType)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(promotionKeyword))
+        {
+            var keyword = promotionKeyword.Trim().ToLower();
+
+            query = query.Where(o => orderItems.Any(i =>
+                i.OrderId == o.Id &&
+                i.PromotionId != null &&
+                (
+                    (i.PromotionName != null && i.PromotionName.ToLower().Contains(keyword)) ||
+                    promotions.Any(p =>
+                        p.Id == i.PromotionId &&
+                        p.PromotionCode != null &&
+                        p.PromotionCode.ToLower().Contains(keyword))
+                )));
+        }
+
+        return query;
+    }
+
     public async Task<BaseTableResponse<OrderResponseDto>> GetByStoreRefCodeAsync(BaseSearchRequest<OrderSearchRequest> request)
     {
         var repoOrder = _unitOfWork.GetRepository<Order>();
@@ -802,6 +862,13 @@ public class OrderService : IOrderService
             var toDate = search.ToDate.Value.Date.AddDays(1);
             query = query.Where(x => x.CreatedAt < toDate);
         }
+
+        query = ApplyPromotionFilter(
+            query,
+            search?.PromotionType,
+            search?.PromotionKeyword,
+            repoOrderItem.Query().AsNoTracking(),
+            _unitOfWork.GetRepository<Promotion>().Query().AsNoTracking());
 
         var projectedQuery =
             from order in query
@@ -860,7 +927,7 @@ public class OrderService : IOrderService
                 (x.Note != null && x.Note.ToLower().Contains(keyword))
             );
         }
-        var totalRecords = await query.CountAsync();
+        var totalRecords = await projectedQuery.CountAsync();
         projectedQuery = request.SortBy switch
         {
             "totalAmount" => request.Asc
@@ -978,6 +1045,13 @@ public class OrderService : IOrderService
             var toDate = search.ToDate.Value.Date.AddDays(1);
             query = query.Where(x => x.CreatedAt < toDate);
         }
+
+        query = ApplyPromotionFilter(
+            query,
+            search?.PromotionType,
+            search?.PromotionKeyword,
+            repoOrderItem.Query().AsNoTracking(),
+            _unitOfWork.GetRepository<Promotion>().Query().AsNoTracking());
 
         var projectedQuery =
             from order in query
@@ -1512,7 +1586,8 @@ public class OrderService : IOrderService
         List<SelectedStoreWideDiscountRequestDto>? selected,
         List<StoreFood> foods,
         long? customerAccountId,
-        long? customerId)
+        long? customerId,
+        bool bypassCustomerLimit = false)
     {
         var overrides = new Dictionary<long, (decimal Price, long PromotionId, string PromotionName)>();
 
@@ -1526,7 +1601,8 @@ public class OrderService : IOrderService
         // đã có record Customer từ trước — tức đã từng đặt hàng). Khách vãng lai hoàn toàn mới (chưa
         // từng có Customer nào ứng với deviceId) không đủ điều kiện — nếu không, ai cũng chỉ cần xoá
         // deviceId/dùng thiết bị khác để "reset" lượt dùng, phá vỡ giới hạn 1 lần/khách.
-        if (customerAccountId is null && customerId is null)
+        // Riêng chủ cửa hàng bán tại quầy (POS) được tự áp chương trình cho khách, không bị giới hạn 1 lần/khách.
+        if (!bypassCustomerLimit && customerAccountId is null && customerId is null)
             return (overrides, "Chương trình chỉ áp dụng cho khách hàng đã từng đặt hàng hoặc đã đăng nhập");
 
         var repoRedemption = _unitOfWork.GetRepository<PromotionRedemption>();
@@ -1543,7 +1619,7 @@ public class OrderService : IOrderService
             if (food is null)
                 return (overrides, "Sản phẩm được chọn giảm giá phải nằm trong đơn hàng");
 
-            var alreadyRedeemed = await repoRedemption.AnyAsync(x =>
+            var alreadyRedeemed = !bypassCustomerLimit && await repoRedemption.AnyAsync(x =>
                 x.PromotionId == promotion.Id &&
                 ((customerAccountId != null && x.CustomerAccountId == customerAccountId) ||
                  (customerId != null && x.CustomerId == customerId)));
@@ -1705,8 +1781,12 @@ public class OrderService : IOrderService
 
     private async Task BroadcastNewOrderAsync(Order order, string customerName)
     {
+        // Lưu thông báo trước để chủ cửa hàng vẫn xem được sau khi reload / lúc offline, rồi mới đẩy realtime.
+        var notification = await _storeNotificationService.CreateNewOrderAsync(order, customerName);
+
         await _realtimeNotificationService.NotifyNewOrderAsync(new NewOrderNotificationDto
         {
+            NotificationId = notification.Id,
             OrderId = order.Id,
             OrderCode = order.OrderCode,
             StoreRefCode = order.StoreRefCode,

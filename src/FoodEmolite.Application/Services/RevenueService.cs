@@ -141,6 +141,7 @@ public class RevenueService : IRevenueService
             .Select(x => new
             {
                 x.OrderStatus,
+                x.PaymentStatus,
                 x.TotalAmount
             })
             .ToListAsync();
@@ -170,8 +171,11 @@ public class RevenueService : IRevenueService
             }).ToList(),
             groupBy);
 
+        // Trạng thái gộp giống trang đơn hàng: đơn huỷ luôn là CANCELLED, còn lại theo PAID / UNPAID.
         var pieChart = allOrders
-            .GroupBy(x => x.OrderStatus)
+            .GroupBy(x => x.OrderStatus == "CANCELLED"
+                ? "CANCELLED"
+                : (x.PaymentStatus == "PAID" ? "PAID" : "UNPAID"))
             .Select(g => new RevenuePieChartDto
             {
                 Label = g.Key,
@@ -183,6 +187,7 @@ public class RevenueService : IRevenueService
             new AgentRevenueResponseDto
             {
                 TotalOrders = totalOrders,
+                TotalCancelledOrders = allOrders.Count(x => x.OrderStatus == "CANCELLED"),
                 TotalRevenue = totalRevenue,
                 LineChart = lineChart,
                 PieChart = pieChart
