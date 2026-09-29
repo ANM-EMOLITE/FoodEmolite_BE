@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FoodEmolite.Domain.Enums;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -23,5 +24,8 @@ namespace FoodEmolite.Application.DTOs.Order
 
         /// <summary>Từ khoá lọc theo tên / mã khuyến mãi đã áp trong đơn.</summary>
         public string? PromotionKeyword { get; set; }
+
+        /// <summary>Nguồn đơn: POS | WEB_USER | WEB_GUEST.</summary>
+        public OrderSource? OrderSource { get; set; }
     }
 }

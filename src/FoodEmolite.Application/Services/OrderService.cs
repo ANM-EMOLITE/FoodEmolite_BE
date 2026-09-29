@@ -5,6 +5,7 @@ using FoodEmolite.Application.DTOs.Realtime;
 using FoodEmolite.Application.ExternalService.Interfaces;
 using FoodEmolite.Application.Interfaces;
 using FoodEmolite.Domain.Entities;
+using FoodEmolite.Domain.Enums;
 using FoodEmolite.Domain.Interfaces;
 using FoodEmolite.Shared.Entities;
 using FoodEmolite.Shared.Responses;
@@ -74,6 +75,19 @@ public class OrderService : IOrderService
 
         // Chủ cửa hàng tự tạo đơn (bán tại quầy / POS): đơn đứng tên chủ cửa hàng, log ghi là chủ cửa hàng tạo đơn.
         var isStoreOwner = store.OwnerAccountId == currentUserId;
+
+        // Chủ cửa hàng tạo ở POS = đơn tại quầy; user đăng nhập đặt = đơn giao hàng, bắt buộc có địa chỉ.
+        DeliveryAddress? deliveryAddress = null;
+
+        if (!isStoreOwner)
+        {
+            var (address, addressError) = ResolveDeliveryAddress(request);
+
+            if (addressError != null)
+                return BaseResponse<CreateOrderResponseDto>.Fail(addressError);
+
+            deliveryAddress = address;
+        }
 
         var storeFoodIds = request.Items
             .Select(x => x.StoreFoodId)
@@ -184,9 +198,13 @@ public class OrderService : IOrderService
             PaymentStatus = totalAmount <= 0 ? "PAID" : "UNPAID",
             PaymentMethod = request.PaymentMethod,
             Note = request.Note,
+            OrderSource = isStoreOwner ? OrderSource.Pos : OrderSource.WebUser,
+            OrderType = OrderType.DineIn,
             CreatedAt = DateTimeHelper.VnNow,
             CreatedBy = currentUserId
         };
+
+        deliveryAddress?.ApplyTo(order);
 
         await repoOrder.AddAsync(order);
         await _unitOfWork.SaveChangesAsync();
@@ -300,6 +318,12 @@ public class OrderService : IOrderService
 
         if (store is null)
             return BaseResponse<CreateOrderResponseDto>.Fail("Store not found");
+
+        // Khách vãng lai luôn là đơn giao hàng — bắt buộc có địa chỉ.
+        var (deliveryAddress, addressError) = ResolveDeliveryAddress(request);
+
+        if (addressError != null)
+            return BaseResponse<CreateOrderResponseDto>.Fail(addressError);
 
         var storeFoodIds = request.Items
             .Select(x => x.StoreFoodId)
@@ -447,10 +471,13 @@ public class OrderService : IOrderService
             PaymentStatus = totalAmount <= 0 ? "PAID" : "UNPAID",
             PaymentMethod = request.PaymentMethod,
             Note = request.Note,
+            OrderSource = OrderSource.WebGuest,
             CreatedAt = DateTimeHelper.VnNow,
             CreatedBy = null,
             IpAddress = GetClientIp()
         };
+
+        deliveryAddress!.ApplyTo(order);
 
         await repoOrder.AddAsync(order);
         await _unitOfWork.SaveChangesAsync();
@@ -570,6 +597,16 @@ public class OrderService : IOrderService
                  PaymentMethod = order.PaymentMethod,
                  Note = order.Note,
                  CreatedAt = order.CreatedAt,
+                 OrderSource = order.OrderSource,
+                 OrderType = order.OrderType,
+                 DeliveryPhone = order.DeliveryPhone,
+                 DeliveryProvinceCode = order.DeliveryProvinceCode,
+                 DeliveryProvinceName = order.DeliveryProvinceName,
+                 DeliveryWardCode = order.DeliveryWardCode,
+                 DeliveryWardName = order.DeliveryWardName,
+                 DeliveryStreet = order.DeliveryStreet,
+                 DeliveryLatitude = order.DeliveryLatitude,
+                 DeliveryLongitude = order.DeliveryLongitude,
                  Items = new List<OrderItemResponseDto>()
              })
              .Skip((page - 1) * pageSize)
@@ -676,6 +713,16 @@ public class OrderService : IOrderService
             PaymentMethod = order.PaymentMethod,
             Note = order.Note,
             CreatedAt = order.CreatedAt,
+            OrderSource = order.OrderSource,
+            OrderType = order.OrderType,
+            DeliveryPhone = order.DeliveryPhone,
+            DeliveryProvinceCode = order.DeliveryProvinceCode,
+            DeliveryProvinceName = order.DeliveryProvinceName,
+            DeliveryWardCode = order.DeliveryWardCode,
+            DeliveryWardName = order.DeliveryWardName,
+            DeliveryStreet = order.DeliveryStreet,
+            DeliveryLatitude = order.DeliveryLatitude,
+            DeliveryLongitude = order.DeliveryLongitude,
             Items = items
         });
     }
@@ -760,6 +807,16 @@ public class OrderService : IOrderService
             PaymentMethod = order.PaymentMethod,
             Note = order.Note,
             CreatedAt = order.CreatedAt,
+            OrderSource = order.OrderSource,
+            OrderType = order.OrderType,
+            DeliveryPhone = order.DeliveryPhone,
+            DeliveryProvinceCode = order.DeliveryProvinceCode,
+            DeliveryProvinceName = order.DeliveryProvinceName,
+            DeliveryWardCode = order.DeliveryWardCode,
+            DeliveryWardName = order.DeliveryWardName,
+            DeliveryStreet = order.DeliveryStreet,
+            DeliveryLatitude = order.DeliveryLatitude,
+            DeliveryLongitude = order.DeliveryLongitude,
             Items = items
         });
     }
@@ -851,6 +908,11 @@ public class OrderService : IOrderService
             query = query.Where(x => x.PaymentStatus == search.PaymentStatus);
         }
 
+        if (search?.OrderSource != null)
+        {
+            query = query.Where(x => x.OrderSource == search.OrderSource);
+        }
+
         if (search?.FromDate != null)
         {
             var fromDate = search.FromDate.Value.Date;
@@ -913,6 +975,16 @@ public class OrderService : IOrderService
                 PaymentMethod = order.PaymentMethod,
                 Note = order.Note,
                 CreatedAt = order.CreatedAt,
+                OrderSource = order.OrderSource,
+                OrderType = order.OrderType,
+                DeliveryPhone = order.DeliveryPhone,
+                DeliveryProvinceCode = order.DeliveryProvinceCode,
+                DeliveryProvinceName = order.DeliveryProvinceName,
+                DeliveryWardCode = order.DeliveryWardCode,
+                DeliveryWardName = order.DeliveryWardName,
+                DeliveryStreet = order.DeliveryStreet,
+                DeliveryLatitude = order.DeliveryLatitude,
+                DeliveryLongitude = order.DeliveryLongitude,
                 Items = new List<OrderItemResponseDto>()
             };
 
@@ -924,7 +996,9 @@ public class OrderService : IOrderService
                 x.OrderCode.ToLower().Contains(keyword) ||
                 x.RefCode.ToLower().Contains(keyword) ||
                 x.CustomerName.ToLower().Contains(keyword) ||
-                (x.Note != null && x.Note.ToLower().Contains(keyword))
+                (x.Note != null && x.Note.ToLower().Contains(keyword)) ||
+                (x.DeliveryPhone != null && x.DeliveryPhone.Contains(keyword)) ||
+                (x.DeliveryStreet != null && x.DeliveryStreet.ToLower().Contains(keyword))
             );
         }
         var totalRecords = await projectedQuery.CountAsync();
@@ -1034,6 +1108,11 @@ public class OrderService : IOrderService
             query = query.Where(x => x.PaymentStatus == search.PaymentStatus);
         }
 
+        if (search?.OrderSource != null)
+        {
+            query = query.Where(x => x.OrderSource == search.OrderSource);
+        }
+
         if (search?.FromDate != null)
         {
             var fromDate = search.FromDate.Value.Date;
@@ -1096,6 +1175,16 @@ public class OrderService : IOrderService
                 PaymentMethod = order.PaymentMethod,
                 Note = order.Note,
                 CreatedAt = order.CreatedAt,
+                OrderSource = order.OrderSource,
+                OrderType = order.OrderType,
+                DeliveryPhone = order.DeliveryPhone,
+                DeliveryProvinceCode = order.DeliveryProvinceCode,
+                DeliveryProvinceName = order.DeliveryProvinceName,
+                DeliveryWardCode = order.DeliveryWardCode,
+                DeliveryWardName = order.DeliveryWardName,
+                DeliveryStreet = order.DeliveryStreet,
+                DeliveryLatitude = order.DeliveryLatitude,
+                DeliveryLongitude = order.DeliveryLongitude,
                 Items = new List<OrderItemResponseDto>()
             };
 
@@ -1107,7 +1196,9 @@ public class OrderService : IOrderService
                 x.OrderCode.ToLower().Contains(keyword) ||
                 x.RefCode.ToLower().Contains(keyword) ||
                 x.CustomerName.ToLower().Contains(keyword) ||
-                (x.Note != null && x.Note.ToLower().Contains(keyword))
+                (x.Note != null && x.Note.ToLower().Contains(keyword)) ||
+                (x.DeliveryPhone != null && x.DeliveryPhone.Contains(keyword)) ||
+                (x.DeliveryStreet != null && x.DeliveryStreet.ToLower().Contains(keyword))
             );
         }
 
@@ -1776,6 +1867,83 @@ public class OrderService : IOrderService
                     CreatedBy = currentUserId
                 });
             }
+        }
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex VnPhoneRegex = new(@"^(0|\+84)\d{9,10}$");
+
+    /// <summary>
+    /// Kiểm tra thông tin nhận hàng cho đơn Delivery — gọi TRƯỚC khi trừ tồn kho.
+    /// Tất cả đều KHÔNG bắt buộc (khách nhập ở trang "Thông tin nhận hàng", chưa nhập vẫn đặt đơn được);
+    /// chỉ kiểm tra định dạng những gì có gửi lên.
+    /// Tỉnh/Phường lấy từ danh mục open-source (FE gọi trực tiếp) nên nhận cả mã và tên từ FE.
+    /// </summary>
+    private static (DeliveryAddress? Address, string? Error) ResolveDeliveryAddress(CreateOrderRequestDto request)
+    {
+        var phone = TrimToNull(request.DeliveryPhone?.Replace(" ", "").Replace(".", "").Replace("-", ""));
+
+        if (phone is not null && !VnPhoneRegex.IsMatch(phone))
+            return (null, "Số điện thoại nhận hàng không hợp lệ");
+
+        var lat = request.DeliveryLatitude;
+        var lng = request.DeliveryLongitude;
+
+        if (lat.HasValue != lng.HasValue ||
+            (lat.HasValue && (lat < -90 || lat > 90 || lng < -180 || lng > 180)))
+            return (null, "Vị trí trên bản đồ không hợp lệ");
+
+        var provinceCode = TrimToNull(request.DeliveryProvinceCode);
+        var provinceName = TrimToNull(request.DeliveryProvinceName);
+        var wardCode = TrimToNull(request.DeliveryWardCode);
+        var wardName = TrimToNull(request.DeliveryWardName);
+        var street = TrimToNull(request.DeliveryStreet);
+
+        if ((provinceCode?.Length ?? 0) > 10 || (wardCode?.Length ?? 0) > 10 ||
+            (provinceName?.Length ?? 0) > 255 || (wardName?.Length ?? 0) > 255)
+            return (null, "Tỉnh/Thành phố hoặc Phường/Xã không hợp lệ");
+
+        if ((street?.Length ?? 0) > 500)
+            return (null, "Địa chỉ quá dài (tối đa 500 ký tự)");
+
+        return (new DeliveryAddress
+        {
+            Phone = phone,
+            ProvinceCode = provinceCode,
+            ProvinceName = provinceName,
+            WardCode = wardCode,
+            WardName = wardName,
+            Street = street,
+            Latitude = lat.HasValue ? Math.Round(lat.Value, 6) : null,
+            Longitude = lng.HasValue ? Math.Round(lng.Value, 6) : null
+        }, null);
+    }
+
+    private static string? TrimToNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    // Cố ý dùng class thường (không phải record): AddAutoServices đăng ký DI mọi class có implement interface,
+    // record tự implement IEquatable<> nên sẽ bị đăng ký nhầm và làm app lỗi khi khởi động.
+    private sealed class DeliveryAddress
+    {
+        public string? Phone { get; init; }
+        public string? ProvinceCode { get; init; }
+        public string? ProvinceName { get; init; }
+        public string? WardCode { get; init; }
+        public string? WardName { get; init; }
+        public string? Street { get; init; }
+        public decimal? Latitude { get; init; }
+        public decimal? Longitude { get; init; }
+
+        public void ApplyTo(Order order)
+        {
+            order.OrderType = OrderType.Delivery;
+            order.DeliveryPhone = Phone;
+            order.DeliveryProvinceCode = ProvinceCode;
+            order.DeliveryProvinceName = ProvinceName;
+            order.DeliveryWardCode = WardCode;
+            order.DeliveryWardName = WardName;
+            order.DeliveryStreet = Street;
+            order.DeliveryLatitude = Latitude;
+            order.DeliveryLongitude = Longitude;
         }
     }
 

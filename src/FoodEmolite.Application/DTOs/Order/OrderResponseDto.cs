@@ -1,4 +1,6 @@
-﻿namespace FoodEmolite.Application.DTOs.Order
+﻿using FoodEmolite.Domain.Enums;
+
+namespace FoodEmolite.Application.DTOs.Order
 {
     public class OrderResponseDto
     {
@@ -25,6 +27,28 @@
         public string? Note { get; set; }
 
         public DateTime CreatedAt { get; set; }
+
+        /// <summary>POS | WEB_USER | WEB_GUEST</summary>
+        public OrderSource OrderSource { get; set; }
+
+        /// <summary>DINE_IN | DELIVERY</summary>
+        public OrderType OrderType { get; set; }
+
+        public string? DeliveryPhone { get; set; }
+
+        public string? DeliveryProvinceCode { get; set; }
+
+        public string? DeliveryProvinceName { get; set; }
+
+        public string? DeliveryWardCode { get; set; }
+
+        public string? DeliveryWardName { get; set; }
+
+        public string? DeliveryStreet { get; set; }
+
+        public decimal? DeliveryLatitude { get; set; }
+
+        public decimal? DeliveryLongitude { get; set; }
 
         public List<OrderItemResponseDto> Items { get; set; } = new();
 

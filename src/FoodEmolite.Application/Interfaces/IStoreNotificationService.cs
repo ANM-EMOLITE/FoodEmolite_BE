@@ -10,7 +10,8 @@ public interface IStoreNotificationService
     Task<StoreNotification> CreateNewOrderAsync(Order order, string customerName);
 
     /// <summary>Thông báo của cửa hàng mà đại lý đang đăng nhập sở hữu, mới nhất trước. isRead: null = tất cả.</summary>
-    Task<BaseResponse<StoreNotificationListResponseDto>> GetMyStoreAsync(long currentUserId, int page, int pageSize, bool? isRead = null);
+    /// <param name="days">Chỉ lấy thông báo trong N ngày gần nhất (null = tất cả).</param>
+    Task<BaseResponse<StoreNotificationListResponseDto>> GetMyStoreAsync(long currentUserId, int page, int pageSize, bool? isRead = null, int? days = null);
 
     Task<BaseResponse<string>> MarkReadAsync(long currentUserId, long id);
 
