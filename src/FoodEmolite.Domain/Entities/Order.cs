@@ -1,4 +1,5 @@
-﻿using FoodEmolite.Shared.Entities;
+﻿using FoodEmolite.Domain.Enums;
+using FoodEmolite.Shared.Entities;
 using Newtonsoft.Json;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -40,4 +41,38 @@ public class Order : BaseEntity
 
     [Column("ip_address")]
     public string? IpAddress { get; set; }
+
+    // BE tự xác định khi tạo đơn, không nhận từ FE — lưu DB dạng POS | WEB_USER | WEB_GUEST
+    [Column("order_source")]
+    public OrderSource OrderSource { get; set; } = OrderSource.Pos;
+
+    // Đơn Delivery bắt buộc có SĐT + địa chỉ giao hàng — lưu DB dạng DINE_IN | DELIVERY
+    [Column("order_type")]
+    public OrderType OrderType { get; set; } = OrderType.DineIn;
+
+    [Column("delivery_phone")]
+    public string? DeliveryPhone { get; set; }
+
+    // Lưu kèm tên (không chỉ mã) để đơn cũ vẫn hiển thị đúng nếu danh mục hành chính thay đổi
+    [Column("delivery_province_code")]
+    public string? DeliveryProvinceCode { get; set; }
+
+    [Column("delivery_province_name")]
+    public string? DeliveryProvinceName { get; set; }
+
+    [Column("delivery_ward_code")]
+    public string? DeliveryWardCode { get; set; }
+
+    [Column("delivery_ward_name")]
+    public string? DeliveryWardName { get; set; }
+
+    // Số nhà, tên đường
+    [Column("delivery_street")]
+    public string? DeliveryStreet { get; set; }
+
+    [Column("delivery_latitude")]
+    public decimal? DeliveryLatitude { get; set; }
+
+    [Column("delivery_longitude")]
+    public decimal? DeliveryLongitude { get; set; }
 }

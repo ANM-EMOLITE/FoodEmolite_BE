@@ -20,6 +20,27 @@
 
         // CASH | BANK_TRANSFER — mặc định chuyển khoản (giữ hành vi cũ nếu FE không gửi)
         public string PaymentMethod { get; set; } = "BANK_TRANSFER";
+
+        // Địa chỉ giao hàng — chỉ dùng cho đơn giao hàng (user / khách vãng lai), bỏ qua với đơn tại quầy (POS).
+        // Tất cả không bắt buộc (khách nhập ở trang "Thông tin nhận hàng"). Nguồn đơn / loại đơn do BE tự xác định.
+        // Tỉnh/Phường lấy từ danh mục open-source provinces.open-api.vn (FE gọi trực tiếp) nên gửi kèm cả mã và tên.
+        public string? DeliveryPhone { get; set; }
+
+        public string? DeliveryProvinceCode { get; set; }
+
+        public string? DeliveryProvinceName { get; set; }
+
+        public string? DeliveryWardCode { get; set; }
+
+        public string? DeliveryWardName { get; set; }
+
+        // Số nhà, tên đường
+        public string? DeliveryStreet { get; set; }
+
+        // Tọa độ lấy từ "Dùng vị trí hiện tại" trên trình duyệt (không bắt buộc)
+        public decimal? DeliveryLatitude { get; set; }
+
+        public decimal? DeliveryLongitude { get; set; }
     }
 
     public class SelectedGiftRequestDto

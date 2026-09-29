@@ -39,7 +39,7 @@ public class StoreNotificationService : IStoreNotificationService
         return notification;
     }
 
-    public async Task<BaseResponse<StoreNotificationListResponseDto>> GetMyStoreAsync(long currentUserId, int page, int pageSize, bool? isRead = null)
+    public async Task<BaseResponse<StoreNotificationListResponseDto>> GetMyStoreAsync(long currentUserId, int page, int pageSize, bool? isRead = null, int? days = null)
     {
         var storeRefCode = await GetOwnedStoreRefCodeAsync(currentUserId);
 
@@ -54,7 +54,14 @@ public class StoreNotificationService : IStoreNotificationService
             .AsNoTracking()
             .Where(x => x.StoreRefCode == storeRefCode);
 
-        // Số chưa đọc luôn tính trên toàn bộ thông báo của cửa hàng, không phụ thuộc bộ lọc.
+        // Trang Thông báo chỉ xem N ngày gần nhất — số chưa đọc cũng tính trong khoảng này cho khớp danh sách.
+        if (days is > 0)
+        {
+            var fromDate = DateTimeHelper.VnNow.Date.AddDays(-(days.Value - 1));
+            query = query.Where(x => x.CreatedAt >= fromDate);
+        }
+
+        // Số chưa đọc không phụ thuộc bộ lọc đã đọc / chưa đọc.
         var unreadCount = await query.CountAsync(x => !x.IsRead);
 
         if (isRead.HasValue)
