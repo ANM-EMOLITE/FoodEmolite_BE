@@ -1,3 +1,4 @@
+using FoodEmolite.Domain.Enums;
 using FoodEmolite.Application.DTOs.Customer;
 using FoodEmolite.Application.ExternalService.Interfaces;
 using FoodEmolite.Application.Interfaces;
@@ -120,7 +121,7 @@ public class CustomerService : ICustomerService
                         : null,
                     IsGuest = false,
                     TotalOrders = group.Count(),
-                    TotalSpent = group.Where(x => x.PaymentStatus == "PAID").Sum(x => x.TotalAmount),
+                    TotalSpent = group.Where(x => x.PaymentStatus == PaymentStatus.Paid).Sum(x => x.TotalAmount),
                     LastOrderAt = group.Max(x => x.CreatedAt),
                     StoreRefCode = group.Key.StoreRefCode,
                     StoreName = group.Key.StoreName
@@ -155,7 +156,7 @@ public class CustomerService : ICustomerService
                     AvatarUrl = null,
                     IsGuest = true,
                     TotalOrders = group.Count(),
-                    TotalSpent = group.Where(x => x.PaymentStatus == "PAID").Sum(x => x.TotalAmount),
+                    TotalSpent = group.Where(x => x.PaymentStatus == PaymentStatus.Paid).Sum(x => x.TotalAmount),
                     LastOrderAt = group.Max(x => x.CreatedAt),
                     StoreRefCode = group.Key.StoreRefCode,
                     StoreName = group.Key.StoreName

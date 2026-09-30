@@ -22,6 +22,8 @@ namespace FoodEmolite.Application.DTOs.StoreFood
 
         public decimal Price { get; set; }
 
+        public decimal CostPrice { get; set; }
+
         public int Quantity { get; set; }
 
         public long StoreFoodCategoryId { get; set; }

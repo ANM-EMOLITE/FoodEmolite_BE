@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace FoodEmolite.API.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/store-food-categories")]
 public class StoreFoodCategoriesController : BaseApiController
 {

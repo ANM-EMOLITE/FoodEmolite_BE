@@ -1,3 +1,4 @@
+using FoodEmolite.Application.Helpers;
 using FoodEmolite.Shared.Common;
 using FoodEmolite.Application.DTOs.Order;
 using FoodEmolite.Application.DTOs.Promotion;
@@ -26,6 +27,7 @@ public class OrderService : IOrderService
     private readonly IActivityLogService _activityLogService;
     private readonly ICloudinaryService _cloudinaryService;
     private readonly IStoreNotificationService _storeNotificationService;
+    private readonly IInventoryService _inventoryService;
 
     public OrderService(
         IUnitOfWork unitOfWork,
@@ -34,7 +36,8 @@ public class OrderService : IOrderService
         IPromotionService promotionService,
         IActivityLogService activityLogService,
         ICloudinaryService cloudinaryService,
-        IStoreNotificationService storeNotificationService)
+        IStoreNotificationService storeNotificationService,
+        IInventoryService inventoryService)
     {
         _unitOfWork = unitOfWork;
         _httpContextAccessor = httpContextAccessor;
@@ -43,6 +46,7 @@ public class OrderService : IOrderService
         _activityLogService = activityLogService;
         _cloudinaryService = cloudinaryService;
         _storeNotificationService = storeNotificationService;
+        _inventoryService = inventoryService;
     }
 
     private string? BuildFoodThumbnailUrl(string? thumbnailRefCode) => !string.IsNullOrWhiteSpace(thumbnailRefCode) ? _cloudinaryService.BuildImageUrl(thumbnailRefCode) : null;
@@ -194,8 +198,8 @@ public class OrderService : IOrderService
             CustomerAccountId = currentUserId,
             StoreRefCode = request.StoreRefCode,
             TotalAmount = totalAmount,
-            OrderStatus = "PENDING",
-            PaymentStatus = totalAmount <= 0 ? "PAID" : "UNPAID",
+            OrderStatus = OrderStatus.Pending,
+            PaymentStatus = totalAmount <= 0 ? PaymentStatus.Paid : PaymentStatus.Unpaid,
             PaymentMethod = request.PaymentMethod,
             Note = request.Note,
             OrderSource = isStoreOwner ? OrderSource.Pos : OrderSource.WebUser,
@@ -229,6 +233,7 @@ public class OrderService : IOrderService
                 StoreFoodId = giftFood.Id,
                 Quantity = gift.Quantity,
                 UnitPrice = 0,
+                CostPrice = giftFood.CostPrice,
                 TotalPrice = 0,
                 CreatedAt = DateTimeHelper.VnNow,
                 CreatedBy = currentUserId
@@ -237,12 +242,14 @@ public class OrderService : IOrderService
             await _unitOfWork.SaveChangesAsync();
         }
 
+        await TrackOrderSaleAsync(order, foods.Concat(giftFoods), requiredQuantities, selectedGifts);
+
         await repoOrderHistory.AddAsync(new OrderHistory
         {
             RefCode = refCode,
             OrderId = order.Id,
             OldStatus = null,
-            NewStatus = order.OrderStatus,
+            NewStatus = EnumCode.ToCode(order.OrderStatus),
             ChangedNote = order.Note,
             CreatedAt = DateTimeHelper.VnNow,
             CreatedBy = currentUserId
@@ -467,8 +474,8 @@ public class OrderService : IOrderService
             CustomerId = customer.Id,
             StoreRefCode = request.StoreRefCode,
             TotalAmount = totalAmount,
-            OrderStatus = "PENDING",
-            PaymentStatus = totalAmount <= 0 ? "PAID" : "UNPAID",
+            OrderStatus = OrderStatus.Pending,
+            PaymentStatus = totalAmount <= 0 ? PaymentStatus.Paid : PaymentStatus.Unpaid,
             PaymentMethod = request.PaymentMethod,
             Note = request.Note,
             OrderSource = OrderSource.WebGuest,
@@ -502,6 +509,7 @@ public class OrderService : IOrderService
                 StoreFoodId = giftFood.Id,
                 Quantity = gift.Quantity,
                 UnitPrice = 0,
+                CostPrice = giftFood.CostPrice,
                 TotalPrice = 0,
                 CreatedAt = DateTimeHelper.VnNow,
                 CreatedBy = null
@@ -510,12 +518,14 @@ public class OrderService : IOrderService
             await _unitOfWork.SaveChangesAsync();
         }
 
+        await TrackOrderSaleAsync(order, foods.Concat(giftFoods), requiredQuantities, selectedGifts);
+
         await repoOrderHistory.AddAsync(new OrderHistory
         {
             RefCode = refCode,
             OrderId = order.Id,
             OldStatus = null,
-            NewStatus = order.OrderStatus,
+            NewStatus = EnumCode.ToCode(order.OrderStatus),
             ChangedNote = order.Note,
             CreatedAt = DateTimeHelper.VnNow,
             CreatedBy = null
@@ -825,9 +835,9 @@ public class OrderService : IOrderService
     {
         return status switch
         {
-            "CANCELLED" => query.Where(x => x.OrderStatus == "CANCELLED"),
-            "PAID" => query.Where(x => x.OrderStatus != "CANCELLED" && x.PaymentStatus == "PAID"),
-            "UNPAID" => query.Where(x => x.OrderStatus != "CANCELLED" && x.PaymentStatus == "UNPAID"),
+            "CANCELLED" => query.Where(x => x.OrderStatus == OrderStatus.Cancelled),
+            "PAID" => query.Where(x => x.OrderStatus != OrderStatus.Cancelled && x.PaymentStatus == PaymentStatus.Paid),
+            "UNPAID" => query.Where(x => x.OrderStatus != OrderStatus.Cancelled && x.PaymentStatus == PaymentStatus.Unpaid),
             _ => query
         };
     }
@@ -874,7 +884,7 @@ public class OrderService : IOrderService
         return query;
     }
 
-    public async Task<BaseTableResponse<OrderResponseDto>> GetByStoreRefCodeAsync(BaseSearchRequest<OrderSearchRequest> request)
+    public async Task<BaseTableResponse<OrderResponseDto>> GetByStoreRefCodeAsync(long currentUserId, BaseSearchRequest<OrderSearchRequest> request)
     {
         var repoOrder = _unitOfWork.GetRepository<Order>();
         var repoOrderItem = _unitOfWork.GetRepository<OrderItem>();
@@ -886,26 +896,28 @@ public class OrderService : IOrderService
         request.Page = request.Page <= 0 ? 1 : request.Page;
         request.PageSize = request.PageSize <= 0 ? 10 : request.PageSize;
 
+        var store = await _unitOfWork.GetOwnedStoreAsync(currentUserId);
+
+        if (store is null)
+            return new BaseTableResponse<OrderResponseDto> { Items = [], Page = request.Page, PageSize = request.PageSize, TotalRecords = 0 };
+
         var search = request.SearchParams;
 
         var query = repoOrder
             .Query()
             .AsNoTracking()
-            .Where(x =>
-                search != null &&
-                !string.IsNullOrWhiteSpace(search.StoreRefCode) &&
-                x.StoreRefCode == search.StoreRefCode);
+            .Where(x => x.StoreRefCode == store.RefCode);
 
         query = ApplyStatusFilter(query, search?.Status);
 
-        if (!string.IsNullOrWhiteSpace(search?.OrderStatus))
+        if (EnumCode.TryParse<OrderStatus>(search?.OrderStatus, out var orderStatus))
         {
-            query = query.Where(x => x.OrderStatus == search.OrderStatus);
+            query = query.Where(x => x.OrderStatus == orderStatus);
         }
 
-        if (!string.IsNullOrWhiteSpace(search?.PaymentStatus))
+        if (EnumCode.TryParse<PaymentStatus>(search?.PaymentStatus, out var paymentStatus))
         {
-            query = query.Where(x => x.PaymentStatus == search.PaymentStatus);
+            query = query.Where(x => x.PaymentStatus == paymentStatus);
         }
 
         if (search?.OrderSource != null)
@@ -1098,14 +1110,14 @@ public class OrderService : IOrderService
 
         query = ApplyStatusFilter(query, search?.Status);
 
-        if (!string.IsNullOrWhiteSpace(search?.OrderStatus))
+        if (EnumCode.TryParse<OrderStatus>(search?.OrderStatus, out var orderStatus))
         {
-            query = query.Where(x => x.OrderStatus == search.OrderStatus);
+            query = query.Where(x => x.OrderStatus == orderStatus);
         }
 
-        if (!string.IsNullOrWhiteSpace(search?.PaymentStatus))
+        if (EnumCode.TryParse<PaymentStatus>(search?.PaymentStatus, out var paymentStatus))
         {
-            query = query.Where(x => x.PaymentStatus == search.PaymentStatus);
+            query = query.Where(x => x.PaymentStatus == paymentStatus);
         }
 
         if (search?.OrderSource != null)
@@ -1280,11 +1292,21 @@ public class OrderService : IOrderService
         var repoOrder = _unitOfWork.GetRepository<Order>();
         var repoOrderHistory = _unitOfWork.GetRepository<OrderHistory>();
 
-        var order = await repoOrder.FirstOrDefaultAsync(x =>
-            x.Id == id);
+        var store = await _unitOfWork.GetOwnedStoreAsync(currentUserId);
+
+        if (store is null)
+            return BaseResponse<string>.Fail("Store not found");
+
+        var order = await repoOrder.FirstOrDefaultAsync(x => x.Id == id && x.StoreRefCode == store.RefCode);
 
         if (order is null)
             return BaseResponse<string>.Fail("Order not found");
+
+        if (request.NewStatus == OrderStatus.Cancelled)
+            return BaseResponse<string>.Fail("Use the cancel endpoint to cancel an order");
+
+        if (order.OrderStatus == OrderStatus.Cancelled)
+            return BaseResponse<string>.Fail("Order is already cancelled");
 
         var oldStatus = order.OrderStatus;
 
@@ -1298,8 +1320,8 @@ public class OrderService : IOrderService
         {
             RefCode = refCode,
             OrderId = order.Id,
-            OldStatus = oldStatus,
-            NewStatus = request.NewStatus,
+            OldStatus = EnumCode.ToCode(oldStatus),
+            NewStatus = EnumCode.ToCode(request.NewStatus),
             ChangedNote = request.ChangedNote,
             CreatedAt = DateTimeHelper.VnNow,
             CreatedBy = currentUserId
@@ -1315,15 +1337,20 @@ public class OrderService : IOrderService
         var repoOrder = _unitOfWork.GetRepository<Order>();
         var repoOrderHistory = _unitOfWork.GetRepository<OrderHistory>();
 
-        var order = await repoOrder.FirstOrDefaultAsync(x => x.Id == id);
+        var store = await _unitOfWork.GetOwnedStoreAsync(currentUserId);
+
+        if (store is null)
+            return BaseResponse<string>.Fail("Store not found");
+
+        var order = await repoOrder.FirstOrDefaultAsync(x => x.Id == id && x.StoreRefCode == store.RefCode);
 
         if (order is null)
             return BaseResponse<string>.Fail("Order not found");
 
-        if (request.NewStatus != "PAID" && request.NewStatus != "UNPAID")
+        if (!Enum.IsDefined(request.NewStatus))
             return BaseResponse<string>.Fail("Invalid payment status");
 
-        if (order.OrderStatus == "CANCELLED")
+        if (order.OrderStatus == OrderStatus.Cancelled)
             return BaseResponse<string>.Fail("Cannot update payment status of a cancelled order");
 
         if (order.PaymentStatus == request.NewStatus)
@@ -1341,8 +1368,8 @@ public class OrderService : IOrderService
         {
             RefCode = refCode,
             OrderId = order.Id,
-            OldStatus = oldStatus,
-            NewStatus = request.NewStatus,
+            OldStatus = EnumCode.ToCode(oldStatus),
+            NewStatus = EnumCode.ToCode(request.NewStatus),
             ChangedNote = request.ChangedNote,
             CreatedAt = DateTimeHelper.VnNow,
             CreatedBy = currentUserId
@@ -1350,7 +1377,7 @@ public class OrderService : IOrderService
 
         await _unitOfWork.SaveChangesAsync();
 
-        if (request.NewStatus == "PAID")
+        if (request.NewStatus == PaymentStatus.Paid)
         {
             var confirmerName = await GetCustomerDisplayNameAsync(currentUserId);
 
@@ -1371,41 +1398,50 @@ public class OrderService : IOrderService
         var repoOrder = _unitOfWork.GetRepository<Order>();
         var repoOrderHistory = _unitOfWork.GetRepository<OrderHistory>();
 
-        var order = await repoOrder.FirstOrDefaultAsync(x => x.Id == id);
+        var store = await _unitOfWork.GetOwnedStoreAsync(currentUserId);
+
+        if (store is null)
+            return BaseResponse<string>.Fail("Store not found");
+
+        var order = await repoOrder.FirstOrDefaultAsync(x => x.Id == id && x.StoreRefCode == store.RefCode);
 
         if (order is null)
             return BaseResponse<string>.Fail("Order not found");
 
-        if (order.OrderStatus == "CANCELLED")
+        if (order.OrderStatus == OrderStatus.Cancelled)
             return BaseResponse<string>.Fail("Order is already cancelled");
 
-        if (order.OrderStatus == "COMPLETED")
+        if (order.OrderStatus == OrderStatus.Completed)
             return BaseResponse<string>.Fail("Cannot cancel a completed order");
 
         // Đơn đã thanh toán không được huỷ (hệ thống không xử lý hoàn tiền).
-        if (order.PaymentStatus == "PAID")
+        if (order.PaymentStatus == PaymentStatus.Paid)
             return BaseResponse<string>.Fail("Cannot cancel a paid order");
 
         var oldStatus = order.OrderStatus;
 
-        order.OrderStatus = "CANCELLED";
+        order.OrderStatus = OrderStatus.Cancelled;
         order.UpdatedAt = DateTimeHelper.VnNow;
         order.UpdatedBy = currentUserId;
 
         repoOrder.Update(order);
 
+        var restoredFoods = await RestoreFoodQuantitiesAsync(order, currentUserId);
+
         await repoOrderHistory.AddAsync(new OrderHistory
         {
             RefCode = refCode,
             OrderId = order.Id,
-            OldStatus = oldStatus,
-            NewStatus = "CANCELLED",
+            OldStatus = EnumCode.ToCode(oldStatus),
+            NewStatus = EnumCode.ToCode(OrderStatus.Cancelled),
             ChangedNote = null,
             CreatedAt = DateTimeHelper.VnNow,
             CreatedBy = currentUserId
         });
 
         await _unitOfWork.SaveChangesAsync();
+
+        await BroadcastFoodQuantitiesAsync(order.StoreRefCode, restoredFoods);
 
         var cancellerName = await GetCustomerDisplayNameAsync(currentUserId);
 
@@ -1429,7 +1465,7 @@ public class OrderService : IOrderService
 
         if (order is null) return BaseResponse<string>.Fail("Order not found");
 
-        if (order.PaymentStatus != "PAID")
+        if (order.PaymentStatus != PaymentStatus.Paid)
         {
             var paidTransaction = await repoTransaction.FirstOrDefaultAsync(x =>
                 x.OrderId == order.Id &&
@@ -1438,16 +1474,16 @@ public class OrderService : IOrderService
 
             if (paidTransaction != null)
             {
-                order.PaymentStatus = "PAID";
+                order.PaymentStatus = PaymentStatus.Paid;
                 await _unitOfWork.SaveChangesAsync();
             }
         }
 
         // Đơn đã bị hủy mà chưa thanh toán: trả "CANCELLED" để FE ngừng chờ/đóng popup QR.
-        if (order.PaymentStatus != "PAID" && order.OrderStatus == "CANCELLED")
+        if (order.PaymentStatus != PaymentStatus.Paid && order.OrderStatus == OrderStatus.Cancelled)
             return BaseResponse<string>.Success("CANCELLED");
 
-        return BaseResponse<string>.Success(order.PaymentStatus);
+        return BaseResponse<string>.Success(EnumCode.ToCode(order.PaymentStatus));
     }
 
     public async Task<BaseResponse<string?>> CheckPendingOrderAsync(string deviceId)
@@ -1460,9 +1496,9 @@ public class OrderService : IOrderService
             join c in repoCustomer.Query()
                 on o.CustomerId equals c.Id
             where c.DeviceId == deviceId
-                && o.PaymentStatus == "UNPAID"
+                && o.PaymentStatus == PaymentStatus.Unpaid
                 && o.PaymentMethod == "BANK_TRANSFER"
-                && o.OrderStatus != "CANCELLED"
+                && o.OrderStatus != OrderStatus.Cancelled
                 && !o.IsDelete
             orderby o.CreatedAt descending
             select o
@@ -1791,7 +1827,7 @@ public class OrderService : IOrderService
             var discountedLineUnitPrice = overrideEntry.Price + optionAmount;
 
             await AddSingleOrderItemAsync(
-                repoOrderItem, repoOrderItemOption, refCode, orderId, food.Id,
+                repoOrderItem, repoOrderItemOption, refCode, orderId, food.Id, food.CostPrice,
                 1, discountedLineUnitPrice, discountedLineUnitPrice, originalUnitPrice,
                 overrideEntry.PromotionId, overrideEntry.PromotionName, options, currentUserId);
 
@@ -1801,7 +1837,7 @@ public class OrderService : IOrderService
                 var remainingUnitPrice = basePrice + optionAmount;
 
                 await AddSingleOrderItemAsync(
-                    repoOrderItem, repoOrderItemOption, refCode, orderId, food.Id,
+                    repoOrderItem, repoOrderItemOption, refCode, orderId, food.Id, food.CostPrice,
                     remainingQuantity, remainingUnitPrice, remainingUnitPrice * remainingQuantity, originalUnitPrice,
                     basePromotionId, basePromotionName, options, currentUserId);
             }
@@ -1811,7 +1847,7 @@ public class OrderService : IOrderService
             var unitPrice = basePrice + optionAmount;
 
             await AddSingleOrderItemAsync(
-                repoOrderItem, repoOrderItemOption, refCode, orderId, food.Id,
+                repoOrderItem, repoOrderItemOption, refCode, orderId, food.Id, food.CostPrice,
                 quantity, unitPrice, unitPrice * quantity, originalUnitPrice,
                 basePromotionId, basePromotionName, options, currentUserId);
         }
@@ -1823,6 +1859,7 @@ public class OrderService : IOrderService
         string refCode,
         long orderId,
         long storeFoodId,
+        decimal costPrice,
         int quantity,
         decimal unitPrice,
         decimal totalPrice,
@@ -1839,6 +1876,7 @@ public class OrderService : IOrderService
             StoreFoodId = storeFoodId,
             Quantity = quantity,
             UnitPrice = unitPrice,
+            CostPrice = costPrice,
             TotalPrice = totalPrice,
             OriginalUnitPrice = originalUnitPrice,
             PromotionId = promotionId,
@@ -1962,6 +2000,52 @@ public class OrderService : IOrderService
             TotalAmount = order.TotalAmount,
             CreatedAt = order.CreatedAt
         });
+    }
+
+    private async Task TrackOrderSaleAsync(Order order, IEnumerable<StoreFood> foods, Dictionary<long, int> requiredQuantities, List<(long StoreFoodId, int Quantity)> gifts)
+    {
+        foreach (var food in foods.DistinctBy(x => x.Id))
+        {
+            var sold = requiredQuantities.GetValueOrDefault(food.Id) + gifts.Where(x => x.StoreFoodId == food.Id).Sum(x => x.Quantity);
+
+            await _inventoryService.TrackAsync(food, InventoryTransactionType.Sale, -sold, order.CreatedBy, order.Id, order.OrderCode);
+        }
+    }
+
+    private async Task<List<StoreFood>> RestoreFoodQuantitiesAsync(Order order, long actorId)
+    {
+        var repoOrderItem = _unitOfWork.GetRepository<OrderItem>();
+        var repoFood = _unitOfWork.GetRepository<StoreFood>();
+
+        var quantityByFood = await repoOrderItem
+            .Query()
+            .AsNoTracking()
+            .Where(x => x.OrderId == order.Id)
+            .GroupBy(x => x.StoreFoodId)
+            .Select(g => new { StoreFoodId = g.Key, Quantity = g.Sum(x => x.Quantity) })
+            .ToListAsync();
+
+        if (quantityByFood.Count == 0)
+            return [];
+
+        var foodIds = quantityByFood.Select(x => x.StoreFoodId).ToList();
+
+        var foods = await repoFood
+            .Query()
+            .Where(x => foodIds.Contains(x.Id))
+            .ToListAsync();
+
+        foreach (var food in foods)
+        {
+            var returned = quantityByFood.First(x => x.StoreFoodId == food.Id).Quantity;
+
+            food.Quantity += returned;
+            repoFood.Update(food);
+
+            await _inventoryService.TrackAsync(food, InventoryTransactionType.CancelReturn, returned, actorId, order.Id, order.OrderCode);
+        }
+
+        return foods;
     }
 
     private async Task BroadcastFoodQuantitiesAsync(string storeRefCode, IEnumerable<StoreFood> foods)

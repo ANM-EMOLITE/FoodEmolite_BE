@@ -16,9 +16,9 @@ namespace FoodEmolite.Application.DTOs.Order
 
         public decimal TotalAmount { get; set; }
 
-        public string OrderStatus { get; set; }
+        public OrderStatus OrderStatus { get; set; }
 
-        public string PaymentStatus { get; set; }
+        public PaymentStatus PaymentStatus { get; set; }
 
         public string PaymentMethod { get; set; }
 

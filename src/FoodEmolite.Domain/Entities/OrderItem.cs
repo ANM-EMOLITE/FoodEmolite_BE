@@ -22,6 +22,10 @@ public class OrderItem : BaseEntity
     [Column("total_price")]
     public decimal TotalPrice { get; set; }
 
+    // Giá vốn tại thời điểm bán
+    [Column("cost_price")]
+    public decimal CostPrice { get; set; }
+
     /// <summary>Đơn giá GỐC (chưa áp khuyến mãi) tại thời điểm đặt hàng — dùng để tính số tiền đã giảm, không đổi theo giá món hiện tại.</summary>
     [Column("original_unit_price")]
     public decimal OriginalUnitPrice { get; set; }

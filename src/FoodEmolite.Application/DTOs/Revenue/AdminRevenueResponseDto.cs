@@ -21,6 +21,8 @@ namespace FoodEmolite.Application.DTOs.Revenue
     {
         public string Label { get; set; } = string.Empty;
         public decimal Revenue { get; set; }
+        public decimal Cost { get; set; }
+        public decimal Profit { get; set; }
         public int OrderCount { get; set; }
     }
 

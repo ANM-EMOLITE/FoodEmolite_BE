@@ -1,3 +1,4 @@
+using FoodEmolite.Domain.Enums;
 using FoodEmolite.Shared.Common;
 using FoodEmolite.Application.DTOs.Promotion;
 using FoodEmolite.Application.DTOs.Realtime;
@@ -909,7 +910,7 @@ public class PromotionService : IPromotionService
             return BaseResponse<PromotionStatsResponseDto>.Fail(error);
 
         var orders = _unitOfWork.GetRepository<Order>().Query().AsNoTracking()
-            .Where(o => !o.IsDelete && o.OrderStatus != "CANCELLED");
+            .Where(o => !o.IsDelete && o.OrderStatus != OrderStatus.Cancelled);
 
         var promotionItems = _unitOfWork.GetRepository<OrderItem>().Query().AsNoTracking()
             .Where(i => i.PromotionId == promotion!.Id);
@@ -926,7 +927,7 @@ public class PromotionService : IPromotionService
             OrderCount = await usedOrders.CountAsync(),
             UsageCount = await itemRows.SumAsync(i => (int?)i.Quantity) ?? 0,
             Revenue = await usedOrders.SumAsync(o => (decimal?)o.TotalAmount) ?? 0,
-            PaidRevenue = await usedOrders.Where(o => o.PaymentStatus == "PAID").SumAsync(o => (decimal?)o.TotalAmount) ?? 0,
+            PaidRevenue = await usedOrders.Where(o => o.PaymentStatus == PaymentStatus.Paid).SumAsync(o => (decimal?)o.TotalAmount) ?? 0,
             DiscountAmount = await itemRows
                 .Where(i => i.OriginalUnitPrice > i.UnitPrice)
                 .SumAsync(i => (decimal?)((i.OriginalUnitPrice - i.UnitPrice) * i.Quantity)) ?? 0

@@ -1,3 +1,4 @@
+using FoodEmolite.Domain.Enums;
 using FoodEmolite.Shared.Common;
 using FoodEmolite.Application.DTOs.StoreFood;
 using FoodEmolite.Application.ExternalService.Interfaces;
@@ -16,12 +17,15 @@ public class StoreFoodService : IStoreFoodService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICloudinaryService _cloudinaryService;
     private readonly IActivityLogService _activityLogService;
+    private readonly IInventoryService _inventoryService;
 
     public StoreFoodService(
         IUnitOfWork unitOfWork,
         ICloudinaryService cloudinaryService,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        IInventoryService inventoryService)
     {
+        _inventoryService = inventoryService;
         _unitOfWork = unitOfWork;
         _cloudinaryService = cloudinaryService;
         _activityLogService = activityLogService;
@@ -34,12 +38,18 @@ public class StoreFoodService : IStoreFoodService
         var repoOptionGroup = _unitOfWork.GetRepository<StoreFoodOptionGroup>();
         var repoOption = _unitOfWork.GetRepository<StoreFoodOption>();
 
-        var store = await repoStore.FirstOrDefaultAsync(x =>
-            x.RefCode == request.StoreRefCode &&
-            !x.IsDeleted);
+        var store = await _unitOfWork.GetOwnedStoreByRefCodeAsync(refCode);
 
         if (store is null)
             return BaseResponse<string>.Fail("Store not found");
+
+        request.StoreRefCode = store.RefCode!;
+
+        if (request.Quantity < 0 || request.Price < 0 || request.CostPrice < 0)
+            return BaseResponse<string>.Fail("Giá và số lượng không được âm");
+
+        if (!await IsCategoryOfStoreAsync(request.StoreFoodCategoryId, store.RefCode!))
+            return BaseResponse<string>.Fail("Danh mục không thuộc cửa hàng");
 
         string productCode;
 
@@ -81,6 +91,7 @@ public class StoreFoodService : IStoreFoodService
             ThumbnailUrl = thumbnailFileRefCode,
             Description = request.Description,
             Price = request.Price,
+            CostPrice = request.CostPrice,
             Quantity = request.Quantity,
             StoreFoodCategoryId = request.StoreFoodCategoryId,
             IsAvailable = true,
@@ -89,6 +100,9 @@ public class StoreFoodService : IStoreFoodService
         };
 
         await repoStoreFood.AddAsync(storeFood);
+        await _unitOfWork.SaveChangesAsync();
+
+        await _inventoryService.TrackAsync(storeFood, InventoryTransactionType.Initial, storeFood.Quantity, store.OwnerAccountId);
         await _unitOfWork.SaveChangesAsync();
 
         if (request.OptionGroups != null && request.OptionGroups.Any())
@@ -143,12 +157,24 @@ public class StoreFoodService : IStoreFoodService
         var repoOptionGroup = _unitOfWork.GetRepository<StoreFoodOptionGroup>();
         var repoOption = _unitOfWork.GetRepository<StoreFoodOption>();
 
+        var store = await _unitOfWork.GetOwnedStoreByRefCodeAsync(refCode);
+
+        if (store is null)
+            return BaseResponse<string>.Fail("Store not found");
+
         var storeFood = await repoStoreFood.FirstOrDefaultAsync(x =>
             x.Id == id &&
+            x.StoreRefCode == store.RefCode &&
             !x.IsDeleted);
 
         if (storeFood is null)
             return BaseResponse<string>.Fail("Store food not found");
+
+        if (request.Quantity < 0 || request.Price < 0 || request.CostPrice < 0)
+            return BaseResponse<string>.Fail("Giá và số lượng không được âm");
+
+        if (!await IsCategoryOfStoreAsync(request.StoreFoodCategoryId, store.RefCode!))
+            return BaseResponse<string>.Fail("Danh mục không thuộc cửa hàng");
 
         var oldFoodName = storeFood.FoodName;
         var changes = new ChangeSummary();
@@ -184,7 +210,8 @@ public class StoreFoodService : IStoreFoodService
             .Text("Tên", storeFood.FoodName, request.FoodName)
             .Text("Mô tả", storeFood.Description, request.Description)
             .Money("Giá", storeFood.Price, request.Price)
-            .Number("Số lượng", storeFood.Quantity, request.Quantity)
+            .Money("Giá vốn", storeFood.CostPrice, request.CostPrice)
+            .Number("Số lượng", storeFood.Quantity, request.Quantity ?? storeFood.Quantity)
             .Flag("Trạng thái", storeFood.IsAvailable, request.IsAvailable, "Đang bán", "Ngừng bán");
 
         if (storeFood.StoreFoodCategoryId != request.StoreFoodCategoryId)
@@ -200,7 +227,16 @@ public class StoreFoodService : IStoreFoodService
         storeFood.ProductCode = newProductCode;
         storeFood.Description = request.Description;
         storeFood.Price = request.Price;
-        storeFood.Quantity = request.Quantity;
+        storeFood.CostPrice = request.CostPrice;
+
+        if (request.Quantity.HasValue && request.Quantity.Value != storeFood.Quantity)
+        {
+            var quantityChange = request.Quantity.Value - storeFood.Quantity;
+            storeFood.Quantity = request.Quantity.Value;
+
+            await _inventoryService.TrackAsync(storeFood, InventoryTransactionType.Adjust, quantityChange, store.OwnerAccountId, note: "Sửa số lượng trực tiếp");
+        }
+
         storeFood.IsAvailable = request.IsAvailable;
         storeFood.StoreFoodCategoryId = request.StoreFoodCategoryId;
         storeFood.UpdatedAt = DateTimeHelper.VnNow;
@@ -389,8 +425,14 @@ public class StoreFoodService : IStoreFoodService
         var repoOptionGroup = _unitOfWork.GetRepository<StoreFoodOptionGroup>();
         var repoOption = _unitOfWork.GetRepository<StoreFoodOption>();
 
+        var store = await _unitOfWork.GetOwnedStoreByRefCodeAsync(refCode);
+
+        if (store is null)
+            return BaseResponse<string>.Fail("Store not found");
+
         var storeFood = await repoStoreFood.FirstOrDefaultAsync(x =>
             x.Id == id &&
+            x.StoreRefCode == store.RefCode &&
             !x.IsDeleted);
 
         if (storeFood is null)
@@ -510,6 +552,7 @@ public class StoreFoodService : IStoreFoodService
                 : null,
             Description = x.StoreFood.Description,
             Price = x.StoreFood.Price,
+            CostPrice = x.StoreFood.CostPrice,
             Quantity = x.StoreFood.Quantity,
             IsAvailable = x.StoreFood.IsAvailable,
             OptionGroups = optionGroups
@@ -548,8 +591,14 @@ public class StoreFoodService : IStoreFoodService
         };
     }
 
-    public async Task<BaseTableResponse<StoreFoodResponseDto>> GetByStoreRefCodeAsync(BaseSearchRequest<GetStoreFoodsRequest> request)
+    public async Task<BaseTableResponse<StoreFoodResponseDto>> GetByStoreRefCodeAsync(BaseSearchRequest<GetStoreFoodsRequest> request, long? currentUserId = null)
     {
+        var requestedStoreRefCode = request.SearchParams?.StoreRefCode;
+        var isOwner = currentUserId.HasValue && await _unitOfWork.GetRepository<Store>().AnyAsync(x =>
+            x.RefCode == requestedStoreRefCode &&
+            x.OwnerAccountId == currentUserId &&
+            !x.IsDeleted);
+
         var repoStoreFood = _unitOfWork.GetRepository<StoreFood>();
         var repoOptionGroup = _unitOfWork.GetRepository<StoreFoodOptionGroup>();
         var repoOption = _unitOfWork.GetRepository<StoreFoodOption>();
@@ -647,6 +696,7 @@ public class StoreFoodService : IStoreFoodService
                 : null,
             Description = food.Description,
             Price = food.Price,
+            CostPrice = isOwner ? food.CostPrice : null,
             Quantity = food.Quantity,
             IsAvailable = food.IsAvailable,
             OptionGroups = optionGroups
@@ -685,7 +735,7 @@ public class StoreFoodService : IStoreFoodService
         };
     }
 
-    public async Task<BaseResponse<StoreFoodResponseDto>> GetDetailAsync(long id)
+    public async Task<BaseResponse<StoreFoodResponseDto>> GetDetailAsync(long id, long? currentUserId = null)
     {
         var repoStoreFood = _unitOfWork.GetRepository<StoreFood>();
         var repoOptionGroup = _unitOfWork.GetRepository<StoreFoodOptionGroup>();
@@ -697,6 +747,11 @@ public class StoreFoodService : IStoreFoodService
 
         if (storeFood is null)
             return BaseResponse<StoreFoodResponseDto>.Fail("Store food not found");
+
+        var isOwner = currentUserId.HasValue && await _unitOfWork.GetRepository<Store>().AnyAsync(x =>
+            x.RefCode == storeFood.StoreRefCode &&
+            x.OwnerAccountId == currentUserId &&
+            !x.IsDeleted);
 
         var optionGroups = await repoOptionGroup.Query()
             .AsNoTracking()
@@ -724,6 +779,7 @@ public class StoreFoodService : IStoreFoodService
                 : null,
             Description = storeFood.Description,
             Price = storeFood.Price,
+            CostPrice = isOwner ? storeFood.CostPrice : null,
             Quantity = storeFood.Quantity,
             IsAvailable = storeFood.IsAvailable,
             StoreFoodCategoryId = storeFood.StoreFoodCategoryId,
@@ -753,6 +809,12 @@ public class StoreFoodService : IStoreFoodService
 
         return BaseResponse<StoreFoodResponseDto>.Success(response);
     }
+
+    private Task<bool> IsCategoryOfStoreAsync(long categoryId, string storeRefCode)
+        => _unitOfWork.GetRepository<StoreFoodCategories>().AnyAsync(x =>
+            x.Id == categoryId &&
+            x.StoreRefCode == storeRefCode &&
+            !x.IsDelete);
 
     private static async Task<string> GenerateNextProductCodeAsync(IRepository<StoreFood> repoStoreFood, string storeRefCode)
     {

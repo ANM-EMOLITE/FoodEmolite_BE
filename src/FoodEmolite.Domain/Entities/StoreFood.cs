@@ -25,6 +25,9 @@ public class StoreFood : BaseEntity
     [Column("price")]
     public decimal Price { get; set; }
 
+    [Column("cost_price")]
+    public decimal CostPrice { get; set; }
+
     [Column("quantity")]
     public int Quantity { get; set; }
 

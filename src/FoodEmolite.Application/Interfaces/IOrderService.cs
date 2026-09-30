@@ -18,7 +18,7 @@ public interface IOrderService
     /// </summary>
     Task<BaseResponse<OrderResponseDto>> GetDetailByStoreAsync(long id, long currentUserId);
 
-    Task<BaseTableResponse<OrderResponseDto>> GetByStoreRefCodeAsync(BaseSearchRequest<OrderSearchRequest> request);
+    Task<BaseTableResponse<OrderResponseDto>> GetByStoreRefCodeAsync(long currentUserId, BaseSearchRequest<OrderSearchRequest> request);
 
     /// <summary>Danh sách đơn hàng toàn hệ thống (mọi cửa hàng) — dùng cho admin. StoreRefCode trong SearchParams là lọc tuỳ chọn.</summary>
     Task<BaseTableResponse<OrderResponseDto>> GetAllForAdminAsync(BaseSearchRequest<OrderSearchRequest> request);

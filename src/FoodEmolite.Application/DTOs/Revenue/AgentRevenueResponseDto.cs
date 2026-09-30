@@ -11,6 +11,8 @@ namespace FoodEmolite.Application.DTOs.Revenue
         public int TotalOrders { get; set; }
         public int TotalCancelledOrders { get; set; }
         public decimal TotalRevenue { get; set; }
+        public decimal TotalCost { get; set; }
+        public decimal TotalProfit { get; set; }
 
         public List<RevenueLineChartDto> LineChart { get; set; } = [];
         public List<RevenuePieChartDto> PieChart { get; set; } = [];

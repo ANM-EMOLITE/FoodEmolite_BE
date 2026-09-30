@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FoodEmolite.Domain.Enums;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,7 +11,7 @@ namespace FoodEmolite.Application.DTOs.Order
     {
         public long OrderId { get; set; }
         public string OrderCode { get; set; }
-        public string PaymentStatus { get; set; }
+        public PaymentStatus PaymentStatus { get; set; }
         public string PaymentMethod { get; set; }
         public decimal TotalAmount { get; set; }
     }
