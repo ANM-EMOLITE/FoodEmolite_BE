@@ -11,6 +11,8 @@ public class TopSellingProductDto
     public string? ThumbnailUrl { get; set; }
     public int QuantitySold { get; set; }
     public decimal Revenue { get; set; }
+    public decimal Cost { get; set; }
+    public decimal Profit { get; set; }
 
     /// <summary>Chỉ có ý nghĩa ở màn admin (xem nhiều cửa hàng cùng lúc).</summary>
     public string StoreRefCode { get; set; } = string.Empty;

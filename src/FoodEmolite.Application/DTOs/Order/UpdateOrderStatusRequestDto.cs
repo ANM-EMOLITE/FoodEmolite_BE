@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FoodEmolite.Domain.Enums;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -8,7 +9,7 @@ namespace FoodEmolite.Application.DTOs.Order
 {
     public class UpdateOrderStatusRequestDto
     {
-        public string NewStatus { get; set; }
+        public OrderStatus NewStatus { get; set; }
 
         public string? ChangedNote { get; set; }
     }

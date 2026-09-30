@@ -71,7 +71,7 @@ public class OrderController : BaseApiController
     [HttpPost("store/search")]
     public async Task<IActionResult> GetByStoreRefCode([FromBody] BaseSearchRequest<OrderSearchRequest> request)
     {
-        var result = await _orderService.GetByStoreRefCodeAsync(request);
+        var result = await _orderService.GetByStoreRefCodeAsync(CurrentUserId!.Value, request);
         return Ok(result);
     }
 

@@ -1,3 +1,4 @@
+using FoodEmolite.Domain.Enums;
 using FoodEmolite.Shared.Common;
 
 using FoodEmolite.Application.DTOs.SePay;
@@ -55,9 +56,9 @@ public class SePayWebhookService : ISePayWebhookService
         await repoTransaction.AddAsync(transaction);
 
         // Đơn đã huỷ không tự chuyển sang PAID; giao dịch vẫn được lưu (IsProcessed = false) để đại lý đối soát/hoàn tiền.
-        if (order != null && order.OrderStatus != "CANCELLED" && order.PaymentStatus != "PAID" && order.TotalAmount == request.Amount)
+        if (order != null && order.OrderStatus != OrderStatus.Cancelled && order.PaymentStatus != PaymentStatus.Paid && order.TotalAmount == request.Amount)
         {
-            order.PaymentStatus = "PAID";
+            order.PaymentStatus = PaymentStatus.Paid;
             transaction.IsProcessed = true;
             transaction.ProcessedAt = now;
         }

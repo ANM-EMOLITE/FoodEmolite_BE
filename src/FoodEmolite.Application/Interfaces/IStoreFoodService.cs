@@ -18,7 +18,7 @@ public interface IStoreFoodService
         string? storeRefCode = null,
         string? keyword = null);
 
-    Task<BaseTableResponse<StoreFoodResponseDto>> GetByStoreRefCodeAsync(BaseSearchRequest<GetStoreFoodsRequest> request);
+    Task<BaseTableResponse<StoreFoodResponseDto>> GetByStoreRefCodeAsync(BaseSearchRequest<GetStoreFoodsRequest> request, long? currentUserId = null);
 
-    Task<BaseResponse<StoreFoodResponseDto>> GetDetailAsync(long id);
+    Task<BaseResponse<StoreFoodResponseDto>> GetDetailAsync(long id, long? currentUserId = null);
 }

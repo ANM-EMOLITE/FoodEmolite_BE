@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using System.Runtime.CompilerServices;
+using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
 
 namespace FoodEmolite.Infrastructure.Extensions;
@@ -13,7 +14,8 @@ public static class DependencyInjection
             .SelectMany(x => x.GetTypes())
             .Where(x =>
                 x.IsClass &&
-                !x.IsAbstract)
+                !x.IsAbstract &&
+                !x.IsDefined(typeof(CompilerGeneratedAttribute), false))
             .ToList();
 
         foreach (var implementationType in implementationTypes)

@@ -1,3 +1,4 @@
+using FoodEmolite.Domain.Enums;
 using FoodEmolite.Shared.Common;
 using FoodEmolite.Application.DTOs.Profile;
 using FoodEmolite.Application.DTOs.Store;
@@ -394,7 +395,7 @@ public class ProfileService : IProfileService
         if (order is null)
             return BaseResponse<StorePaymentInfoResponseDto>.Fail("Order not found");
 
-        if (order.OrderStatus == "CANCELLED")
+        if (order.OrderStatus == OrderStatus.Cancelled)
             return BaseResponse<StorePaymentInfoResponseDto>.Fail("Đơn hàng đã bị hủy");
 
         if (order.PaymentMethod == "CASH")

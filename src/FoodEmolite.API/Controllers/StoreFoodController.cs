@@ -43,7 +43,7 @@ public class StoreFoodController : BaseApiController
     [HttpGet("{id}")]
     public async Task<IActionResult> GetDetail(long id)
     {
-        var result = await _storeFoodService.GetDetailAsync(id);
+        var result = await _storeFoodService.GetDetailAsync(id, CurrentUserId);
         return Ok(result);
     }
 
@@ -51,7 +51,7 @@ public class StoreFoodController : BaseApiController
     [HttpPost("store")]
     public async Task<IActionResult> GetByStoreRefCode([FromBody] BaseSearchRequest<GetStoreFoodsRequest> request)
     {
-        var result = await _storeFoodService.GetByStoreRefCodeAsync(request);
+        var result = await _storeFoodService.GetByStoreRefCodeAsync(request, CurrentUserId);
 
         return Ok(result);
     }

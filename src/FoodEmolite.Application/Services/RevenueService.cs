@@ -1,4 +1,6 @@
-﻿using FoodEmolite.Application.DTOs.Revenue;
+using FoodEmolite.Shared.Common;
+﻿using FoodEmolite.Domain.Enums;
+using FoodEmolite.Application.DTOs.Revenue;
 using FoodEmolite.Application.ExternalService.Interfaces;
 using FoodEmolite.Application.Interfaces;
 using FoodEmolite.Domain.Entities;
@@ -43,8 +45,9 @@ public class RevenueService : IRevenueService
             orderQuery = orderQuery.Where(x => x.CreatedAt <= toDate.Value);
         }
 
+        // Doanh thu: chỉ đơn PAID và chưa huỷ
         var paidOrderQuery = orderQuery
-            .Where(x => x.PaymentStatus == "PAID");
+            .Where(x => x.PaymentStatus == PaymentStatus.Paid && x.OrderStatus != OrderStatus.Cancelled);
 
         var totalAgents = await repoAccount
             .Query()
@@ -68,22 +71,28 @@ public class RevenueService : IRevenueService
         var paidOrders = await paidOrderQuery
             .Select(x => new
             {
+                x.Id,
                 x.CreatedAt,
                 x.TotalAmount,
                 x.OrderStatus
             })
             .ToListAsync();
 
+        var orderCosts = await GetOrderCostsAsync(paidOrderQuery);
+
         var lineChart = BuildLineChart(
             paidOrders.Select(x => new RevenueRawItem
             {
                 CreatedAt = x.CreatedAt,
-                Amount = x.TotalAmount
+                Amount = x.TotalAmount,
+                Cost = orderCosts.GetValueOrDefault(x.Id)
             }).ToList(),
-            groupBy);
+            groupBy,
+            fromDate,
+            toDate);
 
         var pieChart = paidOrders
-            .GroupBy(x => x.OrderStatus)
+            .GroupBy(x => EnumCode.ToCode(x.OrderStatus))
             .Select(g => new RevenuePieChartDto
             {
                 Label = g.Key,
@@ -146,8 +155,9 @@ public class RevenueService : IRevenueService
             })
             .ToListAsync();
 
+        // Doanh thu: chỉ đơn PAID và chưa huỷ
         var paidOrderQuery = orderQuery
-            .Where(x => x.PaymentStatus == "PAID");
+            .Where(x => x.PaymentStatus == PaymentStatus.Paid && x.OrderStatus != OrderStatus.Cancelled);
 
         var totalOrders = await orderQuery.CountAsync();
 
@@ -157,25 +167,31 @@ public class RevenueService : IRevenueService
         var paidOrders = await paidOrderQuery
             .Select(x => new
             {
+                x.Id,
                 x.CreatedAt,
                 x.TotalAmount,
                 x.OrderStatus
             })
             .ToListAsync();
 
+        var orderCosts = await GetOrderCostsAsync(paidOrderQuery);
+
         var lineChart = BuildLineChart(
             paidOrders.Select(x => new RevenueRawItem
             {
                 CreatedAt = x.CreatedAt,
-                Amount = x.TotalAmount
+                Amount = x.TotalAmount,
+                Cost = orderCosts.GetValueOrDefault(x.Id)
             }).ToList(),
-            groupBy);
+            groupBy,
+            fromDate,
+            toDate);
 
         // Trạng thái gộp giống trang đơn hàng: đơn huỷ luôn là CANCELLED, còn lại theo PAID / UNPAID.
         var pieChart = allOrders
-            .GroupBy(x => x.OrderStatus == "CANCELLED"
+            .GroupBy(x => x.OrderStatus == OrderStatus.Cancelled
                 ? "CANCELLED"
-                : (x.PaymentStatus == "PAID" ? "PAID" : "UNPAID"))
+                : EnumCode.ToCode(x.PaymentStatus))
             .Select(g => new RevenuePieChartDto
             {
                 Label = g.Key,
@@ -187,8 +203,10 @@ public class RevenueService : IRevenueService
             new AgentRevenueResponseDto
             {
                 TotalOrders = totalOrders,
-                TotalCancelledOrders = allOrders.Count(x => x.OrderStatus == "CANCELLED"),
+                TotalCancelledOrders = allOrders.Count(x => x.OrderStatus == OrderStatus.Cancelled),
                 TotalRevenue = totalRevenue,
+                TotalCost = orderCosts.Values.Sum(),
+                TotalProfit = totalRevenue - orderCosts.Values.Sum(),
                 LineChart = lineChart,
                 PieChart = pieChart
             });
@@ -257,6 +275,10 @@ public class RevenueService : IRevenueService
                 ? filtered.OrderBy(x => x.QuantitySold)
                 : filtered.OrderByDescending(x => x.QuantitySold),
 
+            "profit" => request.Asc
+                ? filtered.OrderBy(x => x.Profit)
+                : filtered.OrderByDescending(x => x.Profit),
+
             "foodname" => request.Asc
                 ? filtered.OrderBy(x => x.FoodName)
                 : filtered.OrderByDescending(x => x.FoodName),
@@ -320,6 +342,10 @@ public class RevenueService : IRevenueService
                 ? filtered.OrderBy(x => x.QuantitySold)
                 : filtered.OrderByDescending(x => x.QuantitySold),
 
+            "profit" => request.Asc
+                ? filtered.OrderBy(x => x.Profit)
+                : filtered.OrderByDescending(x => x.Profit),
+
             "foodname" => request.Asc
                 ? filtered.OrderBy(x => x.FoodName)
                 : filtered.OrderByDescending(x => x.FoodName),
@@ -351,7 +377,7 @@ public class RevenueService : IRevenueService
     }
 
     /// <summary>
-    /// Gộp OrderItem theo món cho 1 cửa hàng trong khoảng ngày, chỉ tính đơn PaymentStatus = PAID.
+    /// Gộp OrderItem theo món cho 1 cửa hàng trong khoảng ngày, chỉ tính đơn PaymentStatus = PAID và chưa bị huỷ.
     /// Dùng chung cho top-selling-products và bảng doanh thu theo sản phẩm.
     /// </summary>
     private async Task<List<TopSellingProductDto>> BuildProductRevenueAsync(string? storeRefCode, DateTime? fromDate, DateTime? toDate)
@@ -364,7 +390,7 @@ public class RevenueService : IRevenueService
         var orderQuery = repoOrder
             .Query()
             .AsNoTracking()
-            .Where(x => x.PaymentStatus == "PAID");
+            .Where(x => x.PaymentStatus == PaymentStatus.Paid && x.OrderStatus != OrderStatus.Cancelled);
 
         if (!string.IsNullOrWhiteSpace(storeRefCode))
         {
@@ -393,6 +419,7 @@ public class RevenueService : IRevenueService
                 f.ThumbnailUrl,
                 oi.Quantity,
                 oi.TotalPrice,
+                oi.CostPrice,
                 StoreRefCode = o.StoreRefCode,
                 s.StoreName
             }
@@ -409,50 +436,91 @@ public class RevenueService : IRevenueService
                     : null,
                 QuantitySold = g.Sum(x => x.Quantity),
                 Revenue = g.Sum(x => x.TotalPrice),
+                Cost = g.Sum(x => x.Quantity * x.CostPrice),
+                Profit = g.Sum(x => x.TotalPrice - x.Quantity * x.CostPrice),
                 StoreRefCode = g.Key.StoreRefCode,
                 StoreName = g.Key.StoreName
             })
             .ToList();
     }
 
-    private static List<RevenueLineChartDto> BuildLineChart(
-        List<RevenueRawItem> items, 
-        string groupBy)
+    private async Task<Dictionary<long, decimal>> GetOrderCostsAsync(IQueryable<Order> orders)
     {
-        if (groupBy == "month")
+        var orderIds = orders.Select(x => x.Id);
+
+        return await _unitOfWork.GetRepository<OrderItem>()
+            .Query()
+            .AsNoTracking()
+            .Where(x => orderIds.Contains(x.OrderId))
+            .GroupBy(x => x.OrderId)
+            .Select(g => new { g.Key, Cost = g.Sum(x => x.Quantity * x.CostPrice) })
+            .ToDictionaryAsync(x => x.Key, x => x.Cost);
+    }
+
+    private static List<RevenueLineChartDto> BuildLineChart(
+        List<RevenueRawItem> items,
+        string groupBy,
+        DateTime? fromDate,
+        DateTime? toDate)
+    {
+        if (items.Count == 0 && (!fromDate.HasValue || !toDate.HasValue))
         {
-            return items
-                .GroupBy(x => new
-                {
-                    x.CreatedAt.Year,
-                    x.CreatedAt.Month
-                })
-                .OrderBy(g => g.Key.Year)
-                .ThenBy(g => g.Key.Month)
-                .Select(g => new RevenueLineChartDto
-                {
-                    Label = $"{g.Key.Month:00}/{g.Key.Year}",
-                    Revenue = g.Sum(x => x.Amount),
-                    OrderCount = g.Count()
-                })
-                .ToList();
+            return [];
         }
 
-        return items
-            .GroupBy(x => x.CreatedAt.Date)
-            .OrderBy(g => g.Key)
-            .Select(g => new RevenueLineChartDto
+        var start = fromDate?.Date ?? items.Min(x => x.CreatedAt.Date);
+        var end = toDate?.Date ?? items.Max(x => x.CreatedAt.Date);
+
+        if (groupBy == "month")
+        {
+            var byMonth = items
+                .GroupBy(x => new DateTime(x.CreatedAt.Year, x.CreatedAt.Month, 1))
+                .ToDictionary(g => g.Key, g => (Revenue: g.Sum(x => x.Amount), Cost: g.Sum(x => x.Cost), Count: g.Count()));
+
+            var months = new List<RevenueLineChartDto>();
+
+            for (var m = new DateTime(start.Year, start.Month, 1); m <= end; m = m.AddMonths(1))
             {
-                Label = g.Key.ToString("dd/MM/yyyy"),
-                Revenue = g.Sum(x => x.Amount),
-                OrderCount = g.Count()
-            })
-            .ToList();
+                byMonth.TryGetValue(m, out var v);
+                months.Add(new RevenueLineChartDto
+                {
+                    Label = m.ToString("MM/yyyy"),
+                    Revenue = v.Revenue,
+                    Cost = v.Cost,
+                    Profit = v.Revenue - v.Cost,
+                    OrderCount = v.Count
+                });
+            }
+
+            return months;
+        }
+
+        var byDay = items
+            .GroupBy(x => x.CreatedAt.Date)
+            .ToDictionary(g => g.Key, g => (Revenue: g.Sum(x => x.Amount), Cost: g.Sum(x => x.Cost), Count: g.Count()));
+
+        var days = new List<RevenueLineChartDto>();
+
+        for (var d = start; d <= end; d = d.AddDays(1))
+        {
+            byDay.TryGetValue(d, out var v);
+            days.Add(new RevenueLineChartDto
+            {
+                Label = d.ToString("dd/MM/yyyy"),
+                Revenue = v.Revenue,
+                Cost = v.Cost,
+                Profit = v.Revenue - v.Cost,
+                OrderCount = v.Count
+            });
+        }
+
+        return days;
     }
 
     private class RevenueRawItem
     {
         public DateTime CreatedAt { get; set; }
         public decimal Amount { get; set; }
+        public decimal Cost { get; set; }
     }
 }

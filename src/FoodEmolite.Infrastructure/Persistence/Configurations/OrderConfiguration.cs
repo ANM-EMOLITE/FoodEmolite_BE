@@ -12,7 +12,6 @@ public class OrderConfiguration
     public void Configure(
         EntityTypeBuilder<Order> builder)
     {
-        // Lưu enum dạng chuỗi UPPER_SNAKE_CASE (POS, WEB_USER, DINE_IN, ...)
         builder.Property(x => x.OrderSource)
             .HasConversion(
                 v => EnumCode.ToCode(v),
@@ -22,5 +21,15 @@ public class OrderConfiguration
             .HasConversion(
                 v => EnumCode.ToCode(v),
                 v => EnumCode.Parse<OrderType>(v));
+
+        builder.Property(x => x.OrderStatus)
+            .HasConversion(
+                v => EnumCode.ToCode(v),
+                v => EnumCode.Parse<OrderStatus>(v));
+
+        builder.Property(x => x.PaymentStatus)
+            .HasConversion(
+                v => EnumCode.ToCode(v),
+                v => EnumCode.Parse<PaymentStatus>(v));
     }
 }

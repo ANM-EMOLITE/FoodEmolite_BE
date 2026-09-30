@@ -23,11 +23,13 @@ public class Order : BaseEntity
     [Column("total_amount")]
     public decimal TotalAmount { get; set; }
 
+    // Lưu DB dạng PENDING | COMPLETED | CANCELLED
     [Column("order_status")]
-    public string OrderStatus { get; set; }
+    public OrderStatus OrderStatus { get; set; } = OrderStatus.Pending;
 
+    // Lưu DB dạng UNPAID | PAID
     [Column("payment_status")]
-    public string PaymentStatus { get; set; }
+    public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Unpaid;
 
     // CASH | BANK_TRANSFER
     [Column("payment_method")]
