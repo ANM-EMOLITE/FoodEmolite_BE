@@ -16,8 +16,6 @@ public class StoreNotificationController : BaseApiController
         _storeNotificationService = storeNotificationService;
     }
 
-    /// <summary>Thông báo của cửa hàng mà đại lý đang đăng nhập sở hữu, mới nhất trước, kèm số chưa đọc.
-    /// days: chỉ lấy N ngày gần nhất (không truyền = tất cả).</summary>
     [HttpGet]
     public async Task<IActionResult> GetMyStore([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] bool? isRead = null, [FromQuery] int? days = null)
     {

@@ -32,7 +32,6 @@ public class InventoryService : IInventoryService
         _activityLogService = activityLogService;
     }
 
-    // Chỉ thêm vào context, hàm gọi tự SaveChanges để đi chung transaction với thay đổi số lượng.
     public async Task TrackAsync(StoreFood food, InventoryTransactionType type, int quantityChange, long? actorId, long? orderId = null, string? referenceCode = null, string? note = null)
     {
         if (quantityChange == 0 && type != InventoryTransactionType.Initial)
@@ -133,7 +132,7 @@ public class InventoryService : IInventoryService
         };
     }
 
-    public async Task<BaseTableResponse<InventoryReceiptResponseDto>> SearchReceiptsAsync(long currentUserId, BaseSearchRequest<InventoryDocumentSearchRequest> request)
+    public async Task<BaseTableResponse<InventoryReceiptResponseDto>> SearchReceiptsAsync(long currentUserId, BaseSearchRequest<InventoryReceiptSearchRequest> request)
     {
         NormalizePaging(request);
 
@@ -157,6 +156,9 @@ public class InventoryService : IInventoryService
                 (x.SupplierName != null && x.SupplierName.ToLower().Contains(keyword)) ||
                 (x.Note != null && x.Note.ToLower().Contains(keyword)));
         }
+
+        if (search?.SupplierId.HasValue == true)
+            query = query.Where(x => x.SupplierId == search.SupplierId);
 
         query = ApplyDateRange(query, search);
 
@@ -185,6 +187,7 @@ public class InventoryService : IInventoryService
             {
                 Id = x.Id,
                 ReceiptCode = x.ReceiptCode,
+                SupplierId = x.SupplierId,
                 SupplierName = x.SupplierName,
                 Note = x.Note,
                 TotalQuantity = x.TotalQuantity,
@@ -226,6 +229,7 @@ public class InventoryService : IInventoryService
         {
             Id = receipt.Id,
             ReceiptCode = receipt.ReceiptCode,
+            SupplierId = receipt.SupplierId,
             SupplierName = receipt.SupplierName,
             Note = receipt.Note,
             TotalQuantity = receipt.TotalQuantity,
@@ -246,7 +250,7 @@ public class InventoryService : IInventoryService
         });
     }
 
-    public async Task<BaseResponse<string>> CreateReceiptAsync(long currentUserId, CreateInventoryReceiptRequestDto request)
+    public async Task<BaseResponse<string>> CreateReceiptAsync(long currentUserId, string refCode, CreateInventoryReceiptRequestDto request)
     {
         var store = await _unitOfWork.GetOwnedStoreAsync(currentUserId);
 
@@ -276,14 +280,32 @@ public class InventoryService : IInventoryService
         if (foods.Count != foodIds.Count)
             return BaseResponse<string>.Fail("Có món không thuộc cửa hàng hoặc đã bị xoá");
 
+        Supplier? supplier = null;
+
+        if (request.SupplierId.HasValue)
+        {
+            supplier = await _unitOfWork.GetRepository<Supplier>().FirstOrDefaultAsync(x =>
+                x.Id == request.SupplierId.Value &&
+                x.StoreRefCode == store.RefCode &&
+                !x.IsDeleted);
+
+            if (supplier is null)
+                return BaseResponse<string>.Fail("Nhà cung cấp không tồn tại");
+
+            if (!supplier.IsActive)
+                return BaseResponse<string>.Fail("Nhà cung cấp đã ngừng giao dịch");
+        }
+
         var repoReceipt = _unitOfWork.GetRepository<InventoryReceipt>();
         var receiptCount = await repoReceipt.Query().CountAsync(x => x.StoreRefCode == store.RefCode);
 
         var receipt = new InventoryReceipt
         {
+            RefCode = refCode,
             StoreRefCode = store.RefCode!,
             ReceiptCode = $"PN{receiptCount + 1:D5}",
-            SupplierName = request.SupplierName?.Trim(),
+            SupplierId = supplier?.Id,
+            SupplierName = supplier?.SupplierName,
             Note = request.Note?.Trim(),
             TotalQuantity = request.Items.Sum(x => x.Quantity),
             TotalAmount = request.Items.Sum(x => x.Quantity * x.UnitCost),
@@ -302,6 +324,7 @@ public class InventoryService : IInventoryService
 
             await repoItem.AddAsync(new InventoryReceiptItem
             {
+                RefCode = refCode,
                 ReceiptId = receipt.Id,
                 StoreFoodId = food.Id,
                 Quantity = item.Quantity,
@@ -435,7 +458,7 @@ public class InventoryService : IInventoryService
         });
     }
 
-    public async Task<BaseResponse<string>> CreateStocktakeAsync(long currentUserId, CreateInventoryStocktakeRequestDto request)
+    public async Task<BaseResponse<string>> CreateStocktakeAsync(long currentUserId, string refCode, CreateInventoryStocktakeRequestDto request)
     {
         var store = await _unitOfWork.GetOwnedStoreAsync(currentUserId);
 
@@ -473,6 +496,7 @@ public class InventoryService : IInventoryService
 
         var stocktake = new InventoryStocktake
         {
+            RefCode = refCode,
             StoreRefCode = store.RefCode!,
             StocktakeCode = $"KK{stocktakeCount + 1:D5}",
             Note = request.Note?.Trim(),
@@ -492,6 +516,7 @@ public class InventoryService : IInventoryService
         {
             await repoItem.AddAsync(new InventoryStocktakeItem
             {
+                RefCode = refCode,
                 StocktakeId = stocktake.Id,
                 StoreFoodId = line.Food.Id,
                 SystemQuantity = line.SystemQuantity,

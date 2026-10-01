@@ -234,6 +234,7 @@ public class ProfileService : IProfileService
                         Address = store.Address,
                         Description = store.Description,
                         IsActive = store.IsActive,
+                        IsApproved = store.IsApproved,
                         CreatedAt = store.CreatedAt
                     }
             };
@@ -332,6 +333,7 @@ public class ProfileService : IProfileService
                         Address = store.Address,
                         Description = store.Description,
                         IsActive = store.IsActive,
+                        IsApproved = store.IsApproved,
                         CreatedAt = store.CreatedAt
                     }
             });

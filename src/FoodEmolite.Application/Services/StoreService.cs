@@ -53,6 +53,7 @@ public class StoreService : IStoreService
             Address = request.Address,
             Description = request.Description,
             IsActive = true,
+            IsApproved = true,
             IsDeleted = false,
             CreatedAt = DateTimeHelper.VnNow,
             CreatedBy = currentUserId
@@ -121,6 +122,31 @@ public class StoreService : IStoreService
         return BaseResponse<string>.Success("Update store successfully");
     }
 
+    public async Task<BaseResponse<string>> SetApprovalAsync(long id, long currentUserId, bool isApproved)
+    {
+        var repoStore = _unitOfWork.GetRepository<Store>();
+
+        var store = await repoStore.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
+
+        if (store is null)
+            return BaseResponse<string>.Fail("Store not found");
+
+        if (store.IsApproved == isApproved)
+            return BaseResponse<string>.Fail(isApproved ? "Cửa hàng đã được duyệt" : "Cửa hàng đã bị từ chối");
+
+        store.IsApproved = isApproved;
+        store.UpdatedAt = DateTimeHelper.VnNow;
+        store.UpdatedBy = currentUserId;
+
+        repoStore.Update(store);
+        await _unitOfWork.SaveChangesAsync();
+
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, isApproved ? "APPROVE_STORE" : "REJECT_STORE",
+            $"{(isApproved ? "Duyệt" : "Từ chối")} cửa hàng \"{store.StoreName}\"", store.RefCode);
+
+        return BaseResponse<string>.Success(isApproved ? "Đã duyệt cửa hàng" : "Đã từ chối cửa hàng");
+    }
+
     public async Task<BaseResponse<string>> DeleteAsync(long id, long currentUserId)
     {
         var repoStore = _unitOfWork.GetRepository<Store>();
@@ -186,7 +212,8 @@ public class StoreService : IStoreService
                 Address = x.Address,
                 Description = x.Description,
                 CreatedAt = x.CreatedAt,
-                IsActive = x.IsActive
+                IsActive = x.IsActive,
+                IsApproved = x.IsApproved
             })
             .ToListAsync();
 
@@ -246,7 +273,8 @@ public class StoreService : IStoreService
                 PhoneNumber = x.PhoneNumber,
                 Address = x.Address,
                 Description = x.Description,
-                IsActive = x.IsActive
+                IsActive = x.IsActive,
+                IsApproved = x.IsApproved
             })
             .ToListAsync();
 
@@ -282,6 +310,7 @@ public class StoreService : IStoreService
             Address = store.Address,
             Description = store.Description,
             IsActive = store.IsActive,
+            IsApproved = store.IsApproved,
             CreatedAt = store.CreatedAt
         });
     }
@@ -311,6 +340,7 @@ public class StoreService : IStoreService
             Address = store.Address,
             Description = store.Description,
             IsActive = store.IsActive,
+            IsApproved = store.IsApproved,
             CreatedAt = store.CreatedAt
         });
     }

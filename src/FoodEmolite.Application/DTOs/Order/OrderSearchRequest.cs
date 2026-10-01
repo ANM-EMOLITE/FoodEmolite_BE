@@ -27,5 +27,8 @@ namespace FoodEmolite.Application.DTOs.Order
 
         /// <summary>Nguồn đơn: POS | WEB_USER | WEB_GUEST.</summary>
         public OrderSource? OrderSource { get; set; }
+
+        public string? CustomerRefCode { get; set; }
+        public bool IsGuestCustomer { get; set; }
     }
 }

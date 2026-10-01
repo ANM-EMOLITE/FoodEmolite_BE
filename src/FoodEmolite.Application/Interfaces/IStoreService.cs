@@ -14,6 +14,8 @@ public interface IStoreService
         long currentUserId,
         UpdateStoreRequestDto request);
 
+    Task<BaseResponse<string>> SetApprovalAsync(long id, long currentUserId, bool isApproved);
+
     Task<BaseResponse<string>> DeleteAsync(
         long id,
         long currentUserId);

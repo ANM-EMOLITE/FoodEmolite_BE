@@ -25,4 +25,8 @@ public class CustomerController : BaseApiController
 
         return Ok(result);
     }
+
+    [HttpGet("agent/{refCode}")]
+    public async Task<IActionResult> GetAgentCustomerDetail(string refCode, [FromQuery] bool isGuest = false)
+        => Ok(await _customerService.GetAgentCustomerDetailAsync(CurrentUserId!.Value, refCode, isGuest));
 }

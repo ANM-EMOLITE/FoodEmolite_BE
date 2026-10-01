@@ -25,6 +25,8 @@ namespace FoodEmolite.Application.DTOs.Store
         public string? Description { get; set; }
 
         public bool IsActive { get; set; }
+
+        public bool IsApproved { get; set; }
         public DateTime? CreatedAt { get; set; }
     }
 }

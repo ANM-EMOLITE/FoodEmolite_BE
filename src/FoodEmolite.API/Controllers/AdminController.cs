@@ -72,6 +72,14 @@ public class AdminController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPut("stores/{id}/approve")]
+    public async Task<IActionResult> ApproveStore(long id)
+        => Ok(await _storeService.SetApprovalAsync(id, 0, true));
+
+    [HttpPut("stores/{id}/reject")]
+    public async Task<IActionResult> RejectStore(long id)
+        => Ok(await _storeService.SetApprovalAsync(id, 0, false));
+
     [HttpDelete("stores/{id}")]
     public async Task<IActionResult> DeleteStore(long id)
     {

@@ -12,15 +12,15 @@ public interface IInventoryService
 
     Task<BaseTableResponse<InventoryTransactionResponseDto>> SearchTransactionsAsync(long currentUserId, BaseSearchRequest<InventoryTransactionSearchRequest> request);
 
-    Task<BaseTableResponse<InventoryReceiptResponseDto>> SearchReceiptsAsync(long currentUserId, BaseSearchRequest<InventoryDocumentSearchRequest> request);
+    Task<BaseTableResponse<InventoryReceiptResponseDto>> SearchReceiptsAsync(long currentUserId, BaseSearchRequest<InventoryReceiptSearchRequest> request);
 
     Task<BaseResponse<InventoryReceiptResponseDto>> GetReceiptDetailAsync(long currentUserId, long id);
 
-    Task<BaseResponse<string>> CreateReceiptAsync(long currentUserId, CreateInventoryReceiptRequestDto request);
+    Task<BaseResponse<string>> CreateReceiptAsync(long currentUserId, string refCode, CreateInventoryReceiptRequestDto request);
 
     Task<BaseTableResponse<InventoryStocktakeResponseDto>> SearchStocktakesAsync(long currentUserId, BaseSearchRequest<InventoryDocumentSearchRequest> request);
 
     Task<BaseResponse<InventoryStocktakeResponseDto>> GetStocktakeDetailAsync(long currentUserId, long id);
 
-    Task<BaseResponse<string>> CreateStocktakeAsync(long currentUserId, CreateInventoryStocktakeRequestDto request);
+    Task<BaseResponse<string>> CreateStocktakeAsync(long currentUserId, string refCode, CreateInventoryStocktakeRequestDto request);
 }

@@ -7,9 +7,14 @@ public class InventoryDocumentSearchRequest
     public DateTime? ToDate { get; set; }
 }
 
+public class InventoryReceiptSearchRequest : InventoryDocumentSearchRequest
+{
+    public long? SupplierId { get; set; }
+}
+
 public class CreateInventoryReceiptRequestDto
 {
-    public string? SupplierName { get; set; }
+    public long? SupplierId { get; set; }
     public string? Note { get; set; }
     public List<CreateInventoryReceiptItemDto> Items { get; set; } = [];
 }
@@ -25,6 +30,7 @@ public class InventoryReceiptResponseDto
 {
     public long Id { get; set; }
     public string ReceiptCode { get; set; } = string.Empty;
+    public long? SupplierId { get; set; }
     public string? SupplierName { get; set; }
     public string? Note { get; set; }
     public int TotalQuantity { get; set; }
