@@ -908,6 +908,20 @@ public class OrderService : IOrderService
             .AsNoTracking()
             .Where(x => x.StoreRefCode == store.RefCode);
 
+        if (!string.IsNullOrWhiteSpace(search?.CustomerRefCode))
+        {
+            if (search.IsGuestCustomer)
+            {
+                var guestIds = repoCustomer.Query().Where(c => c.RefCode == search.CustomerRefCode).Select(c => (long?)c.Id);
+                query = query.Where(x => x.CustomerAccountId == null && guestIds.Contains(x.CustomerId));
+            }
+            else
+            {
+                var accountIds = repoAccount.Query().Where(a => a.RefCode == search.CustomerRefCode).Select(a => (long?)a.Id);
+                query = query.Where(x => accountIds.Contains(x.CustomerAccountId));
+            }
+        }
+
         query = ApplyStatusFilter(query, search?.Status);
 
         if (EnumCode.TryParse<OrderStatus>(search?.OrderStatus, out var orderStatus))

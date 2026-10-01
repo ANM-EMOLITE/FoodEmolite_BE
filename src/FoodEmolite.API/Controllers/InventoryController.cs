@@ -23,7 +23,7 @@ public class InventoryController : BaseApiController
         => Ok(await _inventoryService.SearchTransactionsAsync(CurrentUserId!.Value, request));
 
     [HttpPost("receipts/search")]
-    public async Task<IActionResult> SearchReceipts([FromBody] BaseSearchRequest<InventoryDocumentSearchRequest> request)
+    public async Task<IActionResult> SearchReceipts([FromBody] BaseSearchRequest<InventoryReceiptSearchRequest> request)
         => Ok(await _inventoryService.SearchReceiptsAsync(CurrentUserId!.Value, request));
 
     [HttpGet("receipts/{id}")]
@@ -32,7 +32,7 @@ public class InventoryController : BaseApiController
 
     [HttpPost("receipts")]
     public async Task<IActionResult> CreateReceipt([FromBody] CreateInventoryReceiptRequestDto request)
-        => Ok(await _inventoryService.CreateReceiptAsync(CurrentUserId!.Value, request));
+        => Ok(await _inventoryService.CreateReceiptAsync(CurrentUserId!.Value, CurrentUserRefCode!, request));
 
     [HttpPost("stocktakes/search")]
     public async Task<IActionResult> SearchStocktakes([FromBody] BaseSearchRequest<InventoryDocumentSearchRequest> request)
@@ -44,5 +44,5 @@ public class InventoryController : BaseApiController
 
     [HttpPost("stocktakes")]
     public async Task<IActionResult> CreateStocktake([FromBody] CreateInventoryStocktakeRequestDto request)
-        => Ok(await _inventoryService.CreateStocktakeAsync(CurrentUserId!.Value, request));
+        => Ok(await _inventoryService.CreateStocktakeAsync(CurrentUserId!.Value, CurrentUserRefCode!, request));
 }

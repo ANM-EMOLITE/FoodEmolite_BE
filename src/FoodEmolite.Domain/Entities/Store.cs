@@ -28,6 +28,9 @@ public class Store : BaseEntity
     [Column("is_active")]
     public bool IsActive { get; set; } = true;
 
+    [Column("is_approved")]
+    public bool IsApproved { get; set; } = true;
+
     [Column("is_deleted")]
     public bool IsDeleted { get; set; } = false;
 }

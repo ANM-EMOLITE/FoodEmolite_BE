@@ -1,6 +1,7 @@
 using FoodEmolite.Domain.Enums;
 using FoodEmolite.Application.DTOs.Customer;
 using FoodEmolite.Application.ExternalService.Interfaces;
+using FoodEmolite.Application.Helpers;
 using FoodEmolite.Application.Interfaces;
 using FoodEmolite.Domain.Entities;
 using FoodEmolite.Domain.Interfaces;
@@ -45,6 +46,84 @@ public class CustomerService : ICustomerService
         return FilterSortPaginate(customers, request);
     }
 
+    public async Task<BaseResponse<CustomerDetailDto>> GetAgentCustomerDetailAsync(long currentUserId, string refCode, bool isGuest)
+    {
+        var store = await _unitOfWork.GetOwnedStoreAsync(currentUserId);
+
+        if (store is null)
+            return BaseResponse<CustomerDetailDto>.Fail("Store not found");
+
+        var orderQuery = _unitOfWork.GetRepository<Order>()
+            .Query()
+            .AsNoTracking()
+            .Where(x => x.StoreRefCode == store.RefCode);
+
+        var detail = new CustomerDetailDto { RefCode = refCode, IsGuest = isGuest };
+
+        if (isGuest)
+        {
+            var customer = await _unitOfWork.GetRepository<Customer>().FirstOrDefaultAsync(x => x.RefCode == refCode);
+
+            if (customer is null)
+                return BaseResponse<CustomerDetailDto>.Fail("Không tìm thấy khách hàng");
+
+            orderQuery = orderQuery.Where(x => x.CustomerAccountId == null && x.CustomerId == customer.Id);
+            detail.CustomerCode = customer.CustomerCode;
+            detail.CustomerName = customer.CustomerName;
+        }
+        else
+        {
+            var account = await _unitOfWork.GetRepository<Account>().FirstOrDefaultAsync(x => x.RefCode == refCode);
+
+            if (account is null)
+                return BaseResponse<CustomerDetailDto>.Fail("Không tìm thấy khách hàng");
+
+            var profile = await _unitOfWork.GetRepository<AccountProfile>().FirstOrDefaultAsync(x => x.AccountId == account.Id);
+
+            orderQuery = orderQuery.Where(x => x.CustomerAccountId == account.Id);
+            detail.CustomerName = !string.IsNullOrWhiteSpace(profile?.FullName) ? profile!.FullName : account.Username;
+            detail.PhoneNumber = profile?.PhoneNumber;
+            detail.Email = account.Email;
+            detail.AvatarUrl = !string.IsNullOrWhiteSpace(profile?.AvatarUrl) ? _cloudinaryService.BuildImageUrl(profile!.AvatarUrl!) : null;
+            detail.Gender = profile?.Gender;
+            detail.DateOfBirth = profile?.DateOfBirth;
+            detail.Address = profile?.Address;
+        }
+
+        var orders = await orderQuery
+            .Select(x => new { x.OrderStatus, x.PaymentStatus, x.TotalAmount, x.CreatedAt })
+            .ToListAsync();
+
+        if (orders.Count == 0)
+            return BaseResponse<CustomerDetailDto>.Fail("Không tìm thấy khách hàng");
+
+        detail.TotalOrders = orders.Count;
+        detail.PaidOrders = orders.Count(x => x.OrderStatus != OrderStatus.Cancelled && x.PaymentStatus == PaymentStatus.Paid);
+        detail.CancelledOrders = orders.Count(x => x.OrderStatus == OrderStatus.Cancelled);
+        detail.TotalSpent = orders.Where(x => x.PaymentStatus == PaymentStatus.Paid).Sum(x => x.TotalAmount);
+        detail.FirstOrderAt = orders.Min(x => x.CreatedAt);
+        detail.LastOrderAt = orders.Max(x => x.CreatedAt);
+
+        detail.RecentOrders = await orderQuery
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(10)
+            .Select(x => new CustomerRecentOrderDto
+            {
+                Id = x.Id,
+                OrderCode = x.OrderCode,
+                TotalAmount = x.TotalAmount,
+                OrderStatus = x.OrderStatus,
+                PaymentStatus = x.PaymentStatus,
+                OrderType = x.OrderType,
+                OrderSource = x.OrderSource,
+                Note = x.Note,
+                CreatedAt = x.CreatedAt
+            })
+            .ToListAsync();
+
+        return BaseResponse<CustomerDetailDto>.Success(detail);
+    }
+
     public async Task<BaseTableResponse<CustomerListItemDto>> GetAdminCustomersAsync(BaseSearchRequest<CustomerSearchRequest> request)
     {
         var customers = await BuildCustomersAsync(request.SearchParams?.StoreRefCode);
@@ -52,9 +131,6 @@ public class CustomerService : ICustomerService
         return FilterSortPaginate(customers, request);
     }
 
-    /// <summary>
-    /// Gộp khách hàng (tài khoản đã đăng ký + khách vãng lai) theo từng cửa hàng, dựa trên lịch sử đơn hàng.
-    /// </summary>
     private async Task<List<CustomerListItemDto>> BuildCustomersAsync(string? storeRefCode)
     {
         var repoOrder = _unitOfWork.GetRepository<Order>();

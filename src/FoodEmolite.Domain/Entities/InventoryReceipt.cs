@@ -12,6 +12,9 @@ public class InventoryReceipt : BaseEntity
     [Column("receipt_code")]
     public string ReceiptCode { get; set; } = string.Empty;
 
+    [Column("supplier_id")]
+    public long? SupplierId { get; set; }
+
     [Column("supplier_name")]
     public string? SupplierName { get; set; }
 

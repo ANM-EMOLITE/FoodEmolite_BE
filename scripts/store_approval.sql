@@ -1,0 +1,2 @@
+ALTER TABLE food_emolite.stores
+    ADD COLUMN IF NOT EXISTS is_approved BOOLEAN NOT NULL DEFAULT TRUE;
