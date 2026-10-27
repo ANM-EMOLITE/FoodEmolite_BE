@@ -12,12 +12,6 @@ public interface IStoreFoodService
 
     Task<BaseResponse<string>> DeleteAsync(string refCode, long id);
 
-    Task<BaseTableResponse<StoreFoodResponseDto>> GetAllAsync(
-        int page,
-        int pageSize,
-        string? storeRefCode = null,
-        string? keyword = null);
-
     Task<BaseTableResponse<StoreFoodResponseDto>> GetByStoreRefCodeAsync(BaseSearchRequest<GetStoreFoodsRequest> request, long? currentUserId = null);
 
     Task<BaseResponse<StoreFoodResponseDto>> GetDetailAsync(long id, long? currentUserId = null);

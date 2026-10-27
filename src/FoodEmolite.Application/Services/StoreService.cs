@@ -226,67 +226,6 @@ public class StoreService : IStoreService
         };
     }
 
-    public async Task<BaseTableResponse<StoreResponseDto>> GetByOwnerRefCodeAsync(string ownerRefCode, int page, int pageSize)
-    {
-        var repoAccount = _unitOfWork.GetRepository<Account>();
-        var repoStore = _unitOfWork.GetRepository<Store>();
-
-        page = page <= 0 ? 1 : page;
-        pageSize = pageSize <= 0 ? 10 : pageSize;
-
-        var account = await repoAccount.FirstOrDefaultAsync(x =>
-            x.RefCode == ownerRefCode);
-
-        if (account is null)
-        {
-            return new BaseTableResponse<StoreResponseDto>
-            {
-                Items = new List<StoreResponseDto>(),
-                Page = page,
-                PageSize = pageSize,
-                TotalRecords = 0
-            };
-        }
-
-        var query = repoStore
-            .Query()
-            .AsNoTracking()
-            .Where(x =>
-                x.OwnerAccountId == account.Id &&
-                !x.IsDeleted);
-
-        var totalRecords = await query.CountAsync();
-
-        var items = await query
-            .OrderByDescending(x => x.Id)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(x => new StoreResponseDto
-            {
-                Id = x.Id,
-                RefCode = x.RefCode,
-                OwnerAccountId = x.OwnerAccountId,
-                StoreName = x.StoreName,
-                ThumbnailUrl = !string.IsNullOrWhiteSpace(x.ThumbnailUrl)
-                    ? _cloudinaryService.BuildImageUrl(x.ThumbnailUrl)
-                    : null,
-                PhoneNumber = x.PhoneNumber,
-                Address = x.Address,
-                Description = x.Description,
-                IsActive = x.IsActive,
-                IsApproved = x.IsApproved
-            })
-            .ToListAsync();
-
-        return new BaseTableResponse<StoreResponseDto>
-        {
-            Items = items,
-            Page = page,
-            PageSize = pageSize,
-            TotalRecords = totalRecords
-        };
-    }
-
     public async Task<BaseResponse<StoreResponseDto>> GetDetailAsync(long id)
     {
         var repoStore = _unitOfWork.GetRepository<Store>();

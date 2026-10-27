@@ -67,15 +67,11 @@ public class ActivityLogService : IActivityLogService
         await LogAsync("Agent", account?.Id, name, action, description, storeRefCode);
     }
 
-    public Task<BaseTableResponse<ActivityLogResponseDto>> SearchAsync(BaseSearchRequest<ActivityLogSearchRequest> request) => SearchCoreAsync(request, null);
-
-    public async Task<BaseTableResponse<ActivityLogResponseDto>> SearchForAgentStoreAsync(long agentAccountId, BaseSearchRequest<ActivityLogSearchRequest> request)
+    public async Task<BaseTableResponse<ActivityLogResponseDto>> SearchAuditLogAsync(long agentAccountId, BaseSearchRequest<ActivityLogSearchRequest> request)
     {
         var repoStore = _unitOfWork.GetRepository<Store>();
 
-        var store = await repoStore.FirstOrDefaultAsync(x =>
-            x.OwnerAccountId == agentAccountId &&
-            !x.IsDeleted);
+        var store = await repoStore.FirstOrDefaultAsync(x => x.OwnerAccountId == agentAccountId && !x.IsDeleted);
 
         if (store is null || string.IsNullOrWhiteSpace(store.RefCode))
         {
@@ -88,10 +84,10 @@ public class ActivityLogService : IActivityLogService
             };
         }
 
-        return await SearchCoreAsync(request, store.RefCode);
+        return await SearchAsync(request, store.RefCode);
     }
 
-    private async Task<BaseTableResponse<ActivityLogResponseDto>> SearchCoreAsync(BaseSearchRequest<ActivityLogSearchRequest> request, string? storeRefCode)
+    public async Task<BaseTableResponse<ActivityLogResponseDto>> SearchAsync(BaseSearchRequest<ActivityLogSearchRequest> request, string? storeRefCode = null)
     {
         var repo = _unitOfWork.GetRepository<ActivityLog>();
 

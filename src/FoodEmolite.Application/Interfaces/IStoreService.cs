@@ -26,11 +26,6 @@ public interface IStoreService
         string? keyword = null,
         bool? isActive = null);
 
-    Task<BaseTableResponse<StoreResponseDto>> GetByOwnerRefCodeAsync(
-        string ownerRefCode,
-        int page,
-        int pageSize);
-
     Task<BaseResponse<StoreResponseDto>> GetDetailAsync(long id);
 
     Task<BaseResponse<StoreResponseDto>> GetByRefCodeAsync(string refCode);

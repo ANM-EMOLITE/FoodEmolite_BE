@@ -14,11 +14,15 @@ public interface IActivityLogService
     /// </summary>
     Task LogAgentActionAsync(long? accountId, string? accountRefCode, string action, string description, string? storeRefCode);
 
-    Task<BaseTableResponse<ActivityLogResponseDto>> SearchAsync(BaseSearchRequest<ActivityLogSearchRequest> request);
+    /// <summary>
+    /// Tìm lịch sử hoạt động. Không truyền storeRefCode thì lấy toàn bộ (admin);
+    /// có storeRefCode thì chỉ lấy log của cửa hàng đó và bỏ log tạo đơn hàng (CREATE_ORDER).
+    /// </summary>
+    Task<BaseTableResponse<ActivityLogResponseDto>> SearchAsync(BaseSearchRequest<ActivityLogSearchRequest> request, string? storeRefCode = null);
 
     /// <summary>
     /// Lịch sử hoạt động liên quan tới cửa hàng của đại lý đang đăng nhập.
     /// Không bao gồm log tạo đơn hàng (CREATE_ORDER) và log của cửa hàng khác.
     /// </summary>
-    Task<BaseTableResponse<ActivityLogResponseDto>> SearchForAgentStoreAsync(long agentAccountId, BaseSearchRequest<ActivityLogSearchRequest> request);
+    Task<BaseTableResponse<ActivityLogResponseDto>> SearchAuditLogAsync(long agentAccountId, BaseSearchRequest<ActivityLogSearchRequest> request);
 }

@@ -18,12 +18,10 @@ public class ActivityLogController : BaseApiController
         _activityLogService = activityLogService;
     }
 
-    /// <summary>Lịch sử hoạt động liên quan tới cửa hàng của đại lý đang đăng nhập (không gồm log tạo đơn).</summary>
     [HttpPost("store/search")]
     public async Task<IActionResult> SearchStore([FromBody] BaseSearchRequest<ActivityLogSearchRequest> request)
     {
-        var result = await _activityLogService.SearchForAgentStoreAsync(CurrentUserId!.Value, request);
-
+        var result = await _activityLogService.SearchAuditLogAsync(CurrentUserId!.Value, request);
         return Ok(result);
     }
 }

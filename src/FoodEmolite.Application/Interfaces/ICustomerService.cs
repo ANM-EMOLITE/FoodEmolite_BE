@@ -11,6 +11,4 @@ public interface ICustomerService
 
     /// <summary>Admin — danh sách khách hàng trên toàn hệ thống, có thể lọc theo 1 cửa hàng qua SearchParams.StoreRefCode.</summary>
     Task<BaseResponse<CustomerDetailDto>> GetAgentCustomerDetailAsync(long currentUserId, string refCode, bool isGuest);
-
-    Task<BaseTableResponse<CustomerListItemDto>> GetAdminCustomersAsync(BaseSearchRequest<CustomerSearchRequest> request);
 }

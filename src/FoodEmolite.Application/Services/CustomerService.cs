@@ -124,13 +124,6 @@ public class CustomerService : ICustomerService
         return BaseResponse<CustomerDetailDto>.Success(detail);
     }
 
-    public async Task<BaseTableResponse<CustomerListItemDto>> GetAdminCustomersAsync(BaseSearchRequest<CustomerSearchRequest> request)
-    {
-        var customers = await BuildCustomersAsync(request.SearchParams?.StoreRefCode);
-
-        return FilterSortPaginate(customers, request);
-    }
-
     private async Task<List<CustomerListItemDto>> BuildCustomersAsync(string? storeRefCode)
     {
         var repoOrder = _unitOfWork.GetRepository<Order>();

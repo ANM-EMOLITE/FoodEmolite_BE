@@ -1,228 +1,153 @@
 using FoodEmolite.Application.DTOs.ActivityLog;
+using FoodEmolite.Application.DTOs.Admin;
 using FoodEmolite.Application.DTOs.Auth;
 using FoodEmolite.Application.DTOs.Customer;
 using FoodEmolite.Application.DTOs.Order;
 using FoodEmolite.Application.DTOs.Revenue;
 using FoodEmolite.Application.DTOs.Store;
-using FoodEmolite.Application.DTOs.StoreFoodCategories;
-using FoodEmolite.Application.Interfaces;
+using FoodEmolite.Application.ExternalService.Interfaces;
 using FoodEmolite.Shared.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FoodEmolite.API.Controllers;
 
-/// <summary>
-/// Toàn bộ API quản trị (cửa hàng, tài khoản, doanh thu, khách hàng, món ăn) gom về 1 chỗ,
-/// tách khỏi các controller dùng chung với agent/user. KHÔNG yêu cầu đăng nhập — theo yêu cầu,
-/// dự định dùng cho 1 hệ thống/công cụ nội bộ khác gọi trực tiếp, không qua FE admin (đã bỏ).
-/// Vì không có JWT nên không có CurrentUserId/CurrentUserRefCode — các field audit (CreatedBy...)
-/// dùng giá trị mặc định, không mang ý nghĩa "người gọi API".
-/// </summary>
 [ApiController]
 [AllowAnonymous]
 [Route("api/admin")]
 public class AdminController : ControllerBase
 {
-    private readonly IStoreService _storeService;
-    private readonly IProfileService _profileService;
-    private readonly IAuthService _authService;
-    private readonly IRevenueService _revenueService;
-    private readonly ICustomerService _customerService;
-    private readonly IStoreFoodService _storeFoodService;
-    private readonly IStoreFoodCategoriesService _storeFoodCategoriesService;
-    private readonly IOrderService _orderService;
-    private readonly IActivityLogService _activityLogService;
+    private readonly IAdminService _adminService;
 
-    public AdminController(
-        IStoreService storeService,
-        IProfileService profileService,
-        IAuthService authService,
-        IRevenueService revenueService,
-        ICustomerService customerService,
-        IStoreFoodService storeFoodService,
-        IStoreFoodCategoriesService storeFoodCategoriesService,
-        IOrderService orderService,
-        IActivityLogService activityLogService)
+    public AdminController(IAdminService adminService)
     {
-        _storeService = storeService;
-        _profileService = profileService;
-        _authService = authService;
-        _revenueService = revenueService;
-        _customerService = customerService;
-        _storeFoodService = storeFoodService;
-        _storeFoodCategoriesService = storeFoodCategoriesService;
-        _orderService = orderService;
-        _activityLogService = activityLogService;
+        _adminService = adminService;
     }
-
-    // ===================== Stores =====================
 
     [HttpPost("stores")]
     public async Task<IActionResult> CreateStore([FromForm] CreateStoreRequestDto request)
     {
-        var result = await _storeService.CreateAsync(0, request);
+        var result = await _adminService.CreateStoreAsync(request);
         return Ok(result);
     }
 
     [HttpPut("stores/{id}")]
     public async Task<IActionResult> UpdateStore(long id, [FromForm] UpdateStoreRequestDto request)
     {
-        var result = await _storeService.UpdateAsync(id, 0, request);
+        var result = await _adminService.UpdateStoreAsync(id, request);
         return Ok(result);
     }
 
     [HttpPut("stores/{id}/approve")]
     public async Task<IActionResult> ApproveStore(long id)
-        => Ok(await _storeService.SetApprovalAsync(id, 0, true));
+        => Ok(await _adminService.SetStoreApprovalAsync(id, true));
 
     [HttpPut("stores/{id}/reject")]
     public async Task<IActionResult> RejectStore(long id)
-        => Ok(await _storeService.SetApprovalAsync(id, 0, false));
+        => Ok(await _adminService.SetStoreApprovalAsync(id, false));
 
     [HttpDelete("stores/{id}")]
     public async Task<IActionResult> DeleteStore(long id)
     {
-        var result = await _storeService.DeleteAsync(id, 0);
+        var result = await _adminService.DeleteStoreAsync(id);
         return Ok(result);
     }
 
-    [HttpGet("stores")]
-    public async Task<IActionResult> GetAllStores(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10,
-        [FromQuery] string? keyword = null,
-        [FromQuery] bool? isActive = null)
+    [HttpPost("stores/search")]
+    public async Task<IActionResult> SearchStores([FromBody] BaseSearchRequest<AdminStoreSearchRequest> request)
     {
-        var result = await _storeService.GetAllAsync(page, pageSize, keyword, isActive);
+        var result = await _adminService.SearchStoresAsync(request);
         return Ok(result);
     }
 
     [HttpGet("stores/{id}")]
     public async Task<IActionResult> GetStoreDetail(long id)
     {
-        var result = await _storeService.GetDetailAsync(id);
+        var result = await _adminService.GetStoreDetailAsync(id);
         return Ok(result);
     }
 
-    [HttpGet("stores/owner/{ownerRefCode}")]
-    public async Task<IActionResult> GetStoresByOwner(
-        string ownerRefCode,
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10)
+    [HttpPost("stores/owner/search")]
+    public async Task<IActionResult> SearchStoresByOwner([FromBody] BaseSearchRequest<AdminStoreByOwnerSearchRequest> request)
     {
-        var result = await _storeService.GetByOwnerRefCodeAsync(ownerRefCode, page, pageSize);
+        var result = await _adminService.SearchStoresByOwnerAsync(request);
         return Ok(result);
     }
 
-    // ===================== Accounts =====================
-
-    [HttpGet("users")]
-    public async Task<IActionResult> GetAllUsers(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10,
-        [FromQuery] string? keyword = null)
+    [HttpPost("users/search")]
+    public async Task<IActionResult> SearchUsers([FromBody] BaseSearchRequest<AdminUserSearchRequest> request)
     {
-        var result = await _profileService.GetAllAccountProfilesAsync(page, pageSize, keyword);
+        var result = await _adminService.SearchUsersAsync(request);
         return Ok(result);
     }
 
-    [HttpGet("agents")]
-    public async Task<IActionResult> GetAllAgents(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10,
-        [FromQuery] string? keyword = null,
-        [FromQuery] bool? isActive = null)
+    [HttpPost("agents/search")]
+    public async Task<IActionResult> SearchAgents([FromBody] BaseSearchRequest<AdminAgentSearchRequest> request)
     {
-        var result = await _profileService.GetAllAgentProfilesAsync(page, pageSize, keyword, isActive);
+        var result = await _adminService.SearchAgentsAsync(request);
         return Ok(result);
     }
 
     [HttpPost("agents")]
     public async Task<IActionResult> CreateAgent(RegisterRequest request)
     {
-        var result = await _authService.CreateAgent(request, Guid.NewGuid().ToString().ToUpper());
+        var result = await _adminService.CreateAgentAsync(request);
         return Ok(result);
     }
-
-    // ===================== Revenue =====================
 
     [HttpGet("revenue")]
     public async Task<IActionResult> GetRevenue([FromQuery] RevenueQueryDto request)
     {
-        var result = await _revenueService.GetAdminRevenueAsync(request);
+        var result = await _adminService.GetRevenueAsync(request);
         return Ok(result);
     }
 
     [HttpGet("revenue/top-products")]
-    public async Task<IActionResult> GetTopProducts(
-        [FromQuery] RevenueQueryDto request,
-        [FromQuery] string? storeRefCode,
-        [FromQuery] int top = 10)
+    public async Task<IActionResult> GetTopProducts([FromQuery] RevenueQueryDto request, [FromQuery] string? storeRefCode, [FromQuery] int top = 10)
     {
-        var result = await _revenueService.GetAdminTopSellingProductsAsync(request, storeRefCode, top);
+        var result = await _adminService.GetTopProductsAsync(request, storeRefCode, top);
         return Ok(result);
     }
 
     [HttpPost("revenue/products/search")]
     public async Task<IActionResult> SearchProductRevenue([FromBody] BaseSearchRequest<ProductRevenueSearchRequest> request)
     {
-        var result = await _revenueService.GetAdminProductRevenueAsync(request);
+        var result = await _adminService.SearchProductRevenueAsync(request);
         return Ok(result);
     }
-
-    // ===================== Customers =====================
 
     [HttpPost("customers/search")]
     public async Task<IActionResult> SearchCustomers([FromBody] BaseSearchRequest<CustomerSearchRequest> request)
     {
-        var result = await _customerService.GetAdminCustomersAsync(request);
+        var result = await _adminService.SearchCustomersAsync(request);
         return Ok(result);
     }
 
-    // ===================== Store foods =====================
-
-    [HttpGet("store-foods")]
-    public async Task<IActionResult> GetAllStoreFoods(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10,
-        [FromQuery] string? storeRefCode = null,
-        [FromQuery] string? keyword = null)
+    [HttpPost("store-foods/search")]
+    public async Task<IActionResult> SearchStoreFoods([FromBody] BaseSearchRequest<AdminStoreFoodSearchRequest> request)
     {
-        var result = await _storeFoodService.GetAllAsync(page, pageSize, storeRefCode, keyword);
+        var result = await _adminService.SearchStoreFoodsAsync(request);
         return Ok(result);
     }
 
-    // ===================== Store food categories =====================
-
-    [HttpGet("categories")]
-    public async Task<IActionResult> GetAllCategories(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10,
-        [FromQuery] string? keyword = null,
-        [FromQuery] string? storeRefCode = null,
-        [FromQuery] string? sortBy = null,
-        [FromQuery] bool asc = false)
+    [HttpPost("categories/search")]
+    public async Task<IActionResult> SearchCategories([FromBody] BaseSearchRequest<AdminCategorySearchRequest> request)
     {
-        var result = await _storeFoodCategoriesService.GetAllForAdminAsync(page, pageSize, keyword, storeRefCode, sortBy, asc);
+        var result = await _adminService.SearchCategoriesAsync(request);
         return Ok(result);
     }
-
-    // ===================== Orders =====================
 
     [HttpPost("orders/search")]
     public async Task<IActionResult> SearchOrders([FromBody] BaseSearchRequest<OrderSearchRequest> request)
     {
-        var result = await _orderService.GetAllForAdminAsync(request);
+        var result = await _adminService.SearchOrdersAsync(request);
         return Ok(result);
     }
-
-    // ===================== Activity logs =====================
 
     [HttpPost("activity-logs/search")]
     public async Task<IActionResult> SearchActivityLogs([FromBody] BaseSearchRequest<ActivityLogSearchRequest> request)
     {
-        var result = await _activityLogService.SearchAsync(request);
+        var result = await _adminService.SearchActivityLogsAsync(request);
         return Ok(result);
     }
 }

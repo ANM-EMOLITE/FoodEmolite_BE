@@ -5,9 +5,6 @@ namespace FoodEmolite.Application.Interfaces;
 
 public interface IProfileService
 {
-    Task<BaseTableResponse<UserProfileResponseDto>> GetAllAccountProfilesAsync(int page, int pageSize, string? keyword = null);
-
-    Task<BaseTableResponse<MyProfileResponseDto>> GetAllAgentProfilesAsync(int page, int pageSize, string? keyword = null, bool? isActive = null);
     Task<BaseResponse<MyProfileResponseDto>> GetMyProfileAsync(long currentUserId);
     Task<BaseResponse<GuestProfileResponseDto>> GetGuestProfileAsync(string deviceId);
     Task<BaseResponse<GuestProfileResponseDto>> UpdateGuestProfile(UpdateGuestProfileRequestDto request);
