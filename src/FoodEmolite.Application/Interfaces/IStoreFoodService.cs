@@ -8,6 +8,10 @@ public interface IStoreFoodService
 {
     Task<BaseResponse<string>> CreateAsync(string refCode, CreateStoreFoodRequestDto request);
 
+    Task<BaseResponse<string>> CreateBulkAsync(string refCode, CreateBulkStoreFoodRequestDto request);
+
+    Task<BaseResponse<bool>> CheckProductCodeExistsAsync(string refCode, string productCode, long? excludeId);
+
     Task<BaseResponse<string>> UpdateAsync(string refCode, long id, UpdateStoreFoodRequestDto request);
 
     Task<BaseResponse<string>> DeleteAsync(string refCode, long id);

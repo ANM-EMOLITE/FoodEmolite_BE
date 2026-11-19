@@ -1,0 +1,2 @@
+ALTER TABLE food_emolite.store_foods
+    ADD COLUMN IF NOT EXISTS is_pay_later BOOLEAN NOT NULL DEFAULT FALSE;

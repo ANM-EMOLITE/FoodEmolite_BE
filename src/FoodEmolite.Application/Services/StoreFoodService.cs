@@ -9,6 +9,7 @@ using FoodEmolite.Domain.Interfaces;
 using FoodEmolite.Shared.Entities;
 using FoodEmolite.Shared.Responses;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 
 namespace FoodEmolite.Application.Services;
 
@@ -94,6 +95,7 @@ public class StoreFoodService : IStoreFoodService
             CostPrice = request.CostPrice,
             Quantity = request.Quantity,
             StoreFoodCategoryId = request.StoreFoodCategoryId,
+            IsPayLater = request.IsPayLater,
             IsAvailable = true,
             IsDeleted = false,
             CreatedAt = DateTimeHelper.VnNow
@@ -149,6 +151,91 @@ public class StoreFoodService : IStoreFoodService
         await _activityLogService.LogAgentActionAsync(null, refCode, "CREATE_FOOD", $"Thêm món \"{storeFood.FoodName}\"", storeFood.StoreRefCode);
 
         return BaseResponse<string>.Success("Create store food successfully");
+    }
+
+    public async Task<BaseResponse<string>> CreateBulkAsync(string refCode, CreateBulkStoreFoodRequestDto request)
+    {
+        const int defaultQuantity = 500;
+
+        var repoStoreFood = _unitOfWork.GetRepository<StoreFood>();
+
+        var store = await _unitOfWork.GetOwnedStoreByRefCodeAsync(refCode);
+
+        if (store is null)
+            return BaseResponse<string>.Fail("Store not found");
+
+        if (!await IsCategoryOfStoreAsync(request.StoreFoodCategoryId, store.RefCode!))
+            return BaseResponse<string>.Fail("Danh mục không thuộc cửa hàng");
+
+        var foodNames = (request.FoodNames ?? new List<string>())
+            .Select(x => Regex.Replace(x ?? string.Empty, @"^\s*\d+\s*[\.\)\-:]\s*", string.Empty).Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (!foodNames.Any())
+            return BaseResponse<string>.Fail("Danh sách món không được để trống");
+
+        var nextCode = await GenerateNextProductCodeAsync(repoStoreFood, store.RefCode!);
+        var nextNumber = int.Parse(nextCode.Substring(2));
+
+        var storeFoods = new List<StoreFood>();
+
+        foreach (var foodName in foodNames)
+        {
+            var storeFood = new StoreFood
+            {
+                RefCode = refCode,
+                StoreRefCode = store.RefCode!,
+                FoodName = foodName,
+                ProductCode = $"SP{nextNumber++:D5}",
+                Price = 0,
+                CostPrice = 0,
+                Quantity = defaultQuantity,
+                StoreFoodCategoryId = request.StoreFoodCategoryId,
+                IsPayLater = true,
+                IsAvailable = true,
+                IsDeleted = false,
+                CreatedAt = DateTimeHelper.VnNow
+            };
+
+            await repoStoreFood.AddAsync(storeFood);
+            storeFoods.Add(storeFood);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        foreach (var storeFood in storeFoods)
+            await _inventoryService.TrackAsync(storeFood, InventoryTransactionType.Initial, storeFood.Quantity, store.OwnerAccountId);
+
+        await _unitOfWork.SaveChangesAsync();
+
+        await _activityLogService.LogAgentActionAsync(null, refCode, "CREATE_FOOD", $"Thêm {storeFoods.Count} món trả tiền sau: {string.Join(", ", foodNames)}", store.RefCode);
+
+        return BaseResponse<string>.Success($"Đã thêm {storeFoods.Count} món");
+    }
+
+    public async Task<BaseResponse<bool>> CheckProductCodeExistsAsync(string refCode, string productCode, long? excludeId)
+    {
+        var repoStoreFood = _unitOfWork.GetRepository<StoreFood>();
+
+        var store = await _unitOfWork.GetOwnedStoreByRefCodeAsync(refCode);
+
+        if (store is null)
+            return BaseResponse<bool>.Fail("Store not found");
+
+        if (string.IsNullOrWhiteSpace(productCode))
+            return BaseResponse<bool>.Success(false);
+
+        var code = productCode.Trim();
+
+        var existed = await repoStoreFood.AnyAsync(x =>
+            x.StoreRefCode == store.RefCode &&
+            x.ProductCode == code &&
+            (!excludeId.HasValue || x.Id != excludeId.Value) &&
+            !x.IsDeleted);
+
+        return BaseResponse<bool>.Success(existed);
     }
 
     public async Task<BaseResponse<string>> UpdateAsync(string refCode, long id, UpdateStoreFoodRequestDto request)
@@ -238,6 +325,12 @@ public class StoreFoodService : IStoreFoodService
         }
 
         storeFood.IsAvailable = request.IsAvailable;
+
+        if (request.IsPayLater.HasValue)
+        {
+            changes.Flag("Trả tiền sau", storeFood.IsPayLater, request.IsPayLater.Value, "Có", "Không");
+            storeFood.IsPayLater = request.IsPayLater.Value;
+        }
         storeFood.StoreFoodCategoryId = request.StoreFoodCategoryId;
         storeFood.UpdatedAt = DateTimeHelper.VnNow;
 
@@ -581,6 +674,7 @@ public class StoreFoodService : IStoreFoodService
             CostPrice = isOwner ? food.CostPrice : null,
             Quantity = food.Quantity,
             IsAvailable = food.IsAvailable,
+            IsPayLater = food.IsPayLater,
             OptionGroups = optionGroups
                 .Where(group => group.StoreFoodId == food.Id)
                 .Select(group => new StoreFoodOptionGroupResponseDto
@@ -664,6 +758,7 @@ public class StoreFoodService : IStoreFoodService
             CostPrice = isOwner ? storeFood.CostPrice : null,
             Quantity = storeFood.Quantity,
             IsAvailable = storeFood.IsAvailable,
+            IsPayLater = storeFood.IsPayLater,
             StoreFoodCategoryId = storeFood.StoreFoodCategoryId,
             OptionGroups = optionGroups.Select(group => new StoreFoodOptionGroupResponseDto
             {

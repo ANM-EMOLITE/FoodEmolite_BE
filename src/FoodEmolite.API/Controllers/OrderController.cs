@@ -100,6 +100,13 @@ public class OrderController : BaseApiController
         return Ok(response);
     }
 
+    [HttpPut("{id}/pay-later-price")]
+    public async Task<IActionResult> UpdatePayLaterPrice(long id, [FromBody] UpdatePayLaterPriceRequestDto request)
+    {
+        var result = await _orderService.UpdatePayLaterPriceAsync(id, CurrentUserId!.Value, request);
+        return Ok(result);
+    }
+
     [HttpPut("{id}/cancel")]
     public async Task<IActionResult> CancelOrders(long id)
     {

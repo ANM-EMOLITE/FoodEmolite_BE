@@ -110,6 +110,8 @@ public class OrderService : IOrderService
         if (foods.Count != storeFoodIds.Count)
             return BaseResponse<CreateOrderResponseDto>.Fail("Food not found");
 
+        var isPayLater = foods.Any(x => x.IsPayLater);
+
         var requiredQuantities = request.Items.GroupBy(x => x.StoreFoodId).ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
         foreach (var food in foods)
@@ -199,8 +201,8 @@ public class OrderService : IOrderService
             StoreRefCode = request.StoreRefCode,
             TotalAmount = totalAmount,
             OrderStatus = OrderStatus.Pending,
-            PaymentStatus = totalAmount <= 0 ? PaymentStatus.Paid : PaymentStatus.Unpaid,
-            PaymentMethod = request.PaymentMethod,
+            PaymentStatus = totalAmount <= 0 && !isPayLater ? PaymentStatus.Paid : PaymentStatus.Unpaid,
+            PaymentMethod = isPayLater ? "CASH" : request.PaymentMethod,
             Note = request.Note,
             OrderSource = isStoreOwner ? OrderSource.Pos : OrderSource.WebUser,
             OrderType = OrderType.DineIn,
@@ -349,6 +351,8 @@ public class OrderService : IOrderService
         if (foods.Count != storeFoodIds.Count)
             return BaseResponse<CreateOrderResponseDto>.Fail("Food not found");
 
+        var isPayLater = foods.Any(x => x.IsPayLater);
+
         var requiredQuantities = request.Items.GroupBy(x => x.StoreFoodId).ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
         foreach (var food in foods)
@@ -475,8 +479,8 @@ public class OrderService : IOrderService
             StoreRefCode = request.StoreRefCode,
             TotalAmount = totalAmount,
             OrderStatus = OrderStatus.Pending,
-            PaymentStatus = totalAmount <= 0 ? PaymentStatus.Paid : PaymentStatus.Unpaid,
-            PaymentMethod = request.PaymentMethod,
+            PaymentStatus = totalAmount <= 0 && !isPayLater ? PaymentStatus.Paid : PaymentStatus.Unpaid,
+            PaymentMethod = isPayLater ? "CASH" : request.PaymentMethod,
             Note = request.Note,
             OrderSource = OrderSource.WebGuest,
             CreatedAt = DateTimeHelper.VnNow,
@@ -793,7 +797,8 @@ public class OrderService : IOrderService
                 TotalPrice = orderItem.TotalPrice,
                 OriginalUnitPrice = orderItem.OriginalUnitPrice,
                 PromotionId = orderItem.PromotionId,
-                PromotionName = orderItem.PromotionName
+                PromotionName = orderItem.PromotionName,
+                IsPayLater = food.IsPayLater
             })
             .ToListAsync();
         await FillOrderItemOptionsAsync(items);
@@ -1203,6 +1208,87 @@ public class OrderService : IOrderService
         }
 
         return BaseResponse<string>.Success("Update payment status successfully");
+    }
+
+    public async Task<BaseResponse<string>> UpdatePayLaterPriceAsync(long id, long currentUserId, UpdatePayLaterPriceRequestDto request)
+    {
+        var repoOrder = _unitOfWork.GetRepository<Order>();
+        var repoOrderItem = _unitOfWork.GetRepository<OrderItem>();
+        var repoFood = _unitOfWork.GetRepository<StoreFood>();
+
+        var store = await _unitOfWork.GetOwnedStoreAsync(currentUserId);
+
+        if (store is null)
+            return BaseResponse<string>.Fail("Store not found");
+
+        var order = await repoOrder.FirstOrDefaultAsync(x => x.Id == id && x.StoreRefCode == store.RefCode && !x.IsDelete);
+
+        if (order is null)
+            return BaseResponse<string>.Fail("Order not found");
+
+        if (order.OrderStatus == OrderStatus.Cancelled)
+            return BaseResponse<string>.Fail("Đơn đã huỷ, không thể cập nhật giá");
+
+        if (order.PaymentStatus == PaymentStatus.Paid)
+            return BaseResponse<string>.Fail("Đơn đã thanh toán, không thể cập nhật giá");
+
+        if (request.Items == null || !request.Items.Any())
+            return BaseResponse<string>.Fail("Danh sách món không được để trống");
+
+        if (request.Items.Any(x => x.UnitPrice < 0))
+            return BaseResponse<string>.Fail("Giá không được âm");
+
+        var orderItems = await repoOrderItem.Query()
+            .Where(x => x.OrderId == order.Id)
+            .ToListAsync();
+
+        var storeFoodIds = orderItems.Select(x => x.StoreFoodId).Distinct().ToList();
+
+        var payLaterFoodIds = await repoFood.Query()
+            .Where(x => storeFoodIds.Contains(x.Id) && x.IsPayLater)
+            .Select(x => x.Id)
+            .ToListAsync();
+
+        foreach (var itemRequest in request.Items)
+        {
+            var orderItem = orderItems.FirstOrDefault(x => x.Id == itemRequest.OrderItemId);
+
+            if (orderItem is null)
+                return BaseResponse<string>.Fail("Món không thuộc đơn hàng");
+
+            if (!payLaterFoodIds.Contains(orderItem.StoreFoodId))
+                return BaseResponse<string>.Fail("Chỉ được cập nhật giá cho món trả tiền sau");
+
+            orderItem.UnitPrice = itemRequest.UnitPrice;
+            orderItem.OriginalUnitPrice = itemRequest.UnitPrice;
+            orderItem.TotalPrice = itemRequest.UnitPrice * orderItem.Quantity;
+            orderItem.UpdatedAt = DateTimeHelper.VnNow;
+            orderItem.UpdatedBy = currentUserId;
+
+            repoOrderItem.Update(orderItem);
+        }
+
+        var oldTotal = order.TotalAmount;
+
+        order.TotalAmount = orderItems.Sum(x => x.TotalPrice);
+        order.UpdatedAt = DateTimeHelper.VnNow;
+        order.UpdatedBy = currentUserId;
+
+        repoOrder.Update(order);
+
+        await _unitOfWork.SaveChangesAsync();
+
+        var actorDisplayName = await GetCustomerDisplayNameAsync(currentUserId);
+
+        await _activityLogService.LogAsync(
+            "Agent",
+            currentUserId,
+            actorDisplayName,
+            "UPDATE_PAY_LATER_PRICE",
+            $"Cập nhật giá món trả tiền sau cho đơn \"{order.OrderCode}\": {oldTotal:N0}đ → {order.TotalAmount:N0}đ",
+            order.StoreRefCode);
+
+        return BaseResponse<string>.Success("Cập nhật giá thành công");
     }
 
     public async Task<BaseResponse<string>> CancelAsync(long id, long currentUserId, string refCode)

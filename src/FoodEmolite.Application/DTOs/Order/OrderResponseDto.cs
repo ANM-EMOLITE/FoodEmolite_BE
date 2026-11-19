@@ -81,6 +81,8 @@ namespace FoodEmolite.Application.DTOs.Order
 
         public string? PromotionName { get; set; }
 
+        public bool IsPayLater { get; set; }
+
         public List<OrderItemOptionResponseDto> Options { get; set; } = new();
     }
 

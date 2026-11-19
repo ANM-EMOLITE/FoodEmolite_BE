@@ -24,6 +24,8 @@ public interface IOrderService
 
     Task<BaseResponse<string>> UpdatePaymentStatusAsync(long id, long currentUserId, string refCode, UpdatePaymentStatusRequestDto request);
 
+    Task<BaseResponse<string>> UpdatePayLaterPriceAsync(long id, long currentUserId, UpdatePayLaterPriceRequestDto request);
+
     Task<BaseResponse<string>> CancelAsync(long id, long currentUserId, string refCode);
 
 

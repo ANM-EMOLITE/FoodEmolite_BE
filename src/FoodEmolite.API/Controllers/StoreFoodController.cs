@@ -25,6 +25,20 @@ public class StoreFoodController : BaseApiController
         return Ok(result);
     }
 
+    [HttpGet("check-product-code")]
+    public async Task<IActionResult> CheckProductCode([FromQuery] string productCode, [FromQuery] long? excludeId)
+    {
+        var result = await _storeFoodService.CheckProductCodeExistsAsync(CurrentUserRefCode, productCode, excludeId);
+        return Ok(result);
+    }
+
+    [HttpPost("bulk")]
+    public async Task<IActionResult> CreateBulk([FromBody] CreateBulkStoreFoodRequestDto request)
+    {
+        var result = await _storeFoodService.CreateBulkAsync(CurrentUserRefCode, request);
+        return Ok(result);
+    }
+
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(long id, UpdateStoreFoodRequestDto request)
     {

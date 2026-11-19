@@ -32,6 +32,8 @@ namespace FoodEmolite.Application.DTOs.StoreFood
 
         public bool IsAvailable { get; set; }
 
+        public bool IsPayLater { get; set; }
+
         public long StoreFoodCategoryId { get; set; }
         public List<StoreFoodOptionGroupResponseDto> OptionGroups { get; set; } = new();
     }
