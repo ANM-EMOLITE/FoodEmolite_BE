@@ -1,3 +1,4 @@
+using FoodEmolite.API.Filters;
 using FoodEmolite.Shared.Common;
 using FoodEmolite.Application.DTOs.Order;
 using FoodEmolite.Application.Interfaces;
@@ -60,6 +61,7 @@ public class OrderController : BaseApiController
     }
 
     /// <summary>Chi tiết đơn hàng cho đại lý — lọc theo cửa hàng của đại lý (không phải theo khách hàng đặt đơn).</summary>
+    [AgentValidation]
     [HttpGet("{id}/store")]
     public async Task<IActionResult> GetDetailByStore(long id)
     {
@@ -68,6 +70,7 @@ public class OrderController : BaseApiController
         return Ok(result);
     }
 
+    [AgentValidation]
     [HttpPost("store/search")]
     public async Task<IActionResult> GetByStoreRefCode([FromBody] BaseSearchRequest<OrderSearchRequest> request)
     {
@@ -75,6 +78,7 @@ public class OrderController : BaseApiController
         return Ok(result);
     }
 
+    [AgentValidation]
     [HttpPut("{id}/status")]
     public async Task<IActionResult> UpdateStatus(long id, [FromBody] UpdateOrderStatusRequestDto request)
     {
@@ -86,6 +90,7 @@ public class OrderController : BaseApiController
         return Ok(result);
     }
 
+    [AgentValidation]
     [HttpPut("{id}/payment-status")]
     public async Task<IActionResult> UpdatePaymentStatus(long id, [FromBody] UpdatePaymentStatusRequestDto request)
     {
@@ -100,6 +105,7 @@ public class OrderController : BaseApiController
         return Ok(response);
     }
 
+    [AgentValidation]
     [HttpPut("{id}/pay-later-price")]
     public async Task<IActionResult> UpdatePayLaterPrice(long id, [FromBody] UpdatePayLaterPriceRequestDto request)
     {
@@ -107,6 +113,7 @@ public class OrderController : BaseApiController
         return Ok(result);
     }
 
+    [AgentValidation]
     [HttpPut("{id}/cancel")]
     public async Task<IActionResult> CancelOrders(long id)
     {

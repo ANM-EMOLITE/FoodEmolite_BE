@@ -1,3 +1,4 @@
+using FoodEmolite.API.Filters;
 using FoodEmolite.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -6,6 +7,7 @@ namespace FoodEmolite.API.Controllers;
 
 [ApiController]
 [Authorize]
+[AgentValidation]
 [Route("api/store-notifications")]
 public class StoreNotificationController : BaseApiController
 {

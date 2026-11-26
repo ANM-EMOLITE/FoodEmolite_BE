@@ -929,6 +929,11 @@ public class OrderService : IOrderService
 
         query = ApplyStatusFilter(query, search?.Status);
 
+        if (search?.ExcludeCancelled == true && string.IsNullOrWhiteSpace(search.Status) && string.IsNullOrWhiteSpace(search.OrderStatus))
+        {
+            query = query.Where(x => x.OrderStatus != OrderStatus.Cancelled);
+        }
+
         if (EnumCode.TryParse<OrderStatus>(search?.OrderStatus, out var orderStatus))
         {
             query = query.Where(x => x.OrderStatus == orderStatus);

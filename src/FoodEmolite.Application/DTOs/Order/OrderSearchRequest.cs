@@ -21,5 +21,7 @@ namespace FoodEmolite.Application.DTOs.Order
         public OrderSource? OrderSource { get; set; }
         public string? CustomerRefCode { get; set; }
         public bool IsGuestCustomer { get; set; }
+
+        public bool ExcludeCancelled { get; set; }
     }
 }

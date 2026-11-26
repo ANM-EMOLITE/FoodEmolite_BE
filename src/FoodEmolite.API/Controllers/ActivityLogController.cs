@@ -1,3 +1,4 @@
+using FoodEmolite.API.Filters;
 using FoodEmolite.Application.DTOs.ActivityLog;
 using FoodEmolite.Application.Interfaces;
 using FoodEmolite.Shared.Entities;
@@ -8,6 +9,7 @@ namespace FoodEmolite.API.Controllers;
 
 [ApiController]
 [Authorize]
+[AgentValidation]
 [Route("api/activity-logs")]
 public class ActivityLogController : BaseApiController
 {

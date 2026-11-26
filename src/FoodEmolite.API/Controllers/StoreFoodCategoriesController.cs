@@ -1,4 +1,5 @@
-﻿using FoodEmolite.Application.DTOs.StoreFoodCategories;
+﻿using FoodEmolite.API.Filters;
+using FoodEmolite.Application.DTOs.StoreFoodCategories;
 using FoodEmolite.Application.Interfaces;
 using FoodEmolite.Shared.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -8,6 +9,7 @@ namespace FoodEmolite.API.Controllers;
 
 [ApiController]
 [Authorize]
+[AgentValidation]
 [Route("api/store-food-categories")]
 public class StoreFoodCategoriesController : BaseApiController
 {

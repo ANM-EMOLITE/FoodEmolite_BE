@@ -18,5 +18,7 @@ namespace FoodEmolite.Application.Interfaces
 
         /// <summary>Doanh thu theo từng món (phân trang/tìm kiếm/sắp xếp), chỉ tính đơn đã thanh toán.</summary>
         Task<BaseTableResponse<TopSellingProductDto>> GetAgentProductRevenueAsync(long currentUserId, BaseSearchRequest<ProductRevenueSearchRequest> request);
+
+        Task<BaseResponse<AgentDashboardResponseDto>> GetAgentDashboardAsync(long currentUserId, RevenueQueryDto request);
     }
 }

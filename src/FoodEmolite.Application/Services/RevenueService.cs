@@ -13,6 +13,7 @@ namespace FoodEmolite.Application.Services;
 
 public class RevenueService : IRevenueService
 {
+    private const int LowStockThreshold = 5;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICloudinaryService _cloudinaryService;
 
@@ -213,6 +214,131 @@ public class RevenueService : IRevenueService
             PageSize = request.PageSize,
             TotalRecords = totalRecords
         };
+    }
+
+    public async Task<BaseResponse<AgentDashboardResponseDto>> GetAgentDashboardAsync(long currentUserId, RevenueQueryDto request)
+    {
+        var queryStore = _unitOfWork.GetRepository<Store>().Query().AsNoTracking();
+        var queryOrder = _unitOfWork.GetRepository<Order>().Query().AsNoTracking();
+        var queryStoreFood = _unitOfWork.GetRepository<StoreFood>().Query().AsNoTracking();
+
+        var store = await queryStore.FirstOrDefaultAsync(x => x.OwnerAccountId == currentUserId && !x.IsDeleted);
+
+        if (store is null)
+            return BaseResponse<AgentDashboardResponseDto>.Fail("Store not found");
+
+        var today = DateTimeHelper.VnNow.Date;
+        var toDate = (request.ToDate ?? today).Date;
+        var fromDate = (request.FromDate ?? toDate.AddDays(-6)).Date;
+
+        if (fromDate > toDate)
+            (fromDate, toDate) = (toDate, fromDate);
+
+        var totalDays = (toDate - fromDate).Days + 1;
+        var previousToDate = fromDate.AddDays(-1);
+        var previousFromDate = previousToDate.AddDays(-(totalDays - 1));
+        var toEnd = toDate.AddDays(1).AddTicks(-1);
+
+        var storeOrders = queryOrder.Where(x => x.StoreRefCode == store.RefCode && !x.IsDelete);
+
+        var orders = await storeOrders
+            .Where(x => x.CreatedAt >= previousFromDate && x.CreatedAt <= toEnd)
+            .Select(x => new DashboardOrderItem
+            {
+                CreatedAt = x.CreatedAt,
+                TotalAmount = x.TotalAmount,
+                IsCancelled = x.OrderStatus == OrderStatus.Cancelled,
+                IsPaid = x.PaymentStatus == PaymentStatus.Paid,
+                CustomerKey = x.CustomerId != null
+                    ? "C" + x.CustomerId
+                    : x.CustomerAccountId != null ? "A" + x.CustomerAccountId : null
+            })
+            .ToListAsync();
+
+        var pendingUnpaidOrders = await storeOrders
+            .CountAsync(x => x.OrderStatus != OrderStatus.Cancelled && x.PaymentStatus != PaymentStatus.Paid);
+
+        var foods = await queryStoreFood
+            .Where(x => x.StoreRefCode == store.RefCode && !x.IsDeleted)
+            .Select(x => new { x.Quantity, x.IsAvailable })
+            .ToListAsync();
+
+        var currentOrders = orders.Where(x => x.CreatedAt >= fromDate).ToList();
+        var previousOrders = orders.Where(x => x.CreatedAt < fromDate).ToList();
+
+        var products = await BuildProductRevenueAsync(store.RefCode, fromDate, toEnd);
+
+        return BaseResponse<AgentDashboardResponseDto>.Success(new AgentDashboardResponseDto
+        {
+            StoreName = store.StoreName,
+            PendingUnpaidOrders = pendingUnpaidOrders,
+            FromDate = fromDate,
+            ToDate = toDate,
+            PreviousFromDate = previousFromDate,
+            PreviousToDate = previousToDate,
+            Current = BuildDashboardSummary(currentOrders),
+            Previous = BuildDashboardSummary(previousOrders),
+            Daily = BuildDashboardDaily(currentOrders, fromDate, toDate),
+            PreviousDaily = BuildDashboardDaily(previousOrders, previousFromDate, previousToDate),
+            OutOfStock = foods.Count(x => x.Quantity <= 0),
+            LowStock = foods.Count(x => x.Quantity > 0 && x.Quantity < LowStockThreshold),
+            Unavailable = foods.Count(x => !x.IsAvailable),
+            TopByQuantity = products.OrderByDescending(x => x.QuantitySold).Take(5).ToList(),
+            TopByRevenue = products.OrderByDescending(x => x.Revenue).Take(5).ToList()
+        });
+    }
+
+    private static DashboardSummaryDto BuildDashboardSummary(List<DashboardOrderItem> orders)
+    {
+        var active = orders.Where(x => !x.IsCancelled).ToList();
+        var paid = active.Where(x => x.IsPaid).ToList();
+        var unpaid = active.Where(x => !x.IsPaid).ToList();
+        var cancelled = orders.Where(x => x.IsCancelled).ToList();
+
+        return new DashboardSummaryDto
+        {
+            TotalOrders = orders.Count,
+            TotalAmount = active.Sum(x => x.TotalAmount),
+            Revenue = paid.Sum(x => x.TotalAmount),
+            PaidOrders = paid.Count,
+            UnpaidOrders = unpaid.Count,
+            UnpaidAmount = unpaid.Sum(x => x.TotalAmount),
+            CancelledOrders = cancelled.Count,
+            CancelledAmount = cancelled.Sum(x => x.TotalAmount),
+            Customers = orders.Where(x => x.CustomerKey != null).Select(x => x.CustomerKey).Distinct().Count()
+        };
+    }
+
+    private static List<DashboardDailyDto> BuildDashboardDaily(List<DashboardOrderItem> orders, DateTime fromDate, DateTime toDate)
+    {
+        var byDay = orders.GroupBy(x => x.CreatedAt.Date).ToDictionary(g => g.Key, g => g.ToList());
+        var days = new List<DashboardDailyDto>();
+
+        for (var d = fromDate; d <= toDate; d = d.AddDays(1))
+        {
+            var items = byDay.GetValueOrDefault(d) ?? [];
+
+            days.Add(new DashboardDailyDto
+            {
+                Date = d,
+                Orders = items.Count,
+                Customers = items.Where(x => x.CustomerKey != null).Select(x => x.CustomerKey).Distinct().Count(),
+                CancelledAmount = items.Where(x => x.IsCancelled).Sum(x => x.TotalAmount),
+                Revenue = items.Where(x => !x.IsCancelled && x.IsPaid).Sum(x => x.TotalAmount),
+                TotalAmount = items.Where(x => !x.IsCancelled).Sum(x => x.TotalAmount)
+            });
+        }
+
+        return days;
+    }
+
+    private class DashboardOrderItem
+    {
+        public DateTime CreatedAt { get; set; }
+        public decimal TotalAmount { get; set; }
+        public bool IsCancelled { get; set; }
+        public bool IsPaid { get; set; }
+        public string? CustomerKey { get; set; }
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
-﻿using FoodEmolite.Application.DTOs.Revenue;
+﻿using FoodEmolite.API.Filters;
+using FoodEmolite.Application.DTOs.Revenue;
 using FoodEmolite.Application.Interfaces;
 using FoodEmolite.Shared.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -8,6 +9,7 @@ namespace FoodEmolite.API.Controllers;
 
 [ApiController]
 [Authorize]
+[AgentValidation]
 [Route("api/revenue")]
 public class RevenueController : BaseApiController
 {
@@ -32,6 +34,13 @@ public class RevenueController : BaseApiController
     public async Task<IActionResult> GetAgentTopProducts([FromQuery] RevenueQueryDto request, [FromQuery] int top = 10)
     {
         var result = await _revenueService.GetAgentTopSellingProductsAsync(CurrentUserId!.Value, request, top);
+        return Ok(result);
+    }
+
+    [HttpGet("agent/dashboard")]
+    public async Task<IActionResult> GetAgentDashboard([FromQuery] RevenueQueryDto request)
+    {
+        var result = await _revenueService.GetAgentDashboardAsync(CurrentUserId!.Value, request);
         return Ok(result);
     }
 
