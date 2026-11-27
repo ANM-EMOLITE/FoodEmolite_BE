@@ -33,4 +33,10 @@ public class ActivityLog : BaseEntity
     /// <summary>Cửa hàng mà hành động này liên quan tới (để đại lý xem lịch sử hoạt động của cửa hàng mình). Null nếu không gắn với cửa hàng nào.</summary>
     [Column("store_ref_code")]
     public string? StoreRefCode { get; set; }
+
+    [Column("target_type")]
+    public string? TargetType { get; set; }
+
+    [Column("target_id")]
+    public long? TargetId { get; set; }
 }

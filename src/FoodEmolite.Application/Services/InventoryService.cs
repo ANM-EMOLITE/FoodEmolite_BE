@@ -1,4 +1,5 @@
 using FoodEmolite.Application.DTOs.Inventory;
+using FoodEmolite.Application.DTOs.Notification;
 using FoodEmolite.Application.DTOs.Realtime;
 using FoodEmolite.Application.ExternalService.Interfaces;
 using FoodEmolite.Application.Helpers;
@@ -19,13 +20,16 @@ public class InventoryService : IInventoryService
     private readonly ICloudinaryService _cloudinaryService;
     private readonly IRealtimeNotificationService _realtimeNotificationService;
     private readonly IActivityLogService _activityLogService;
+    private readonly IStoreNotificationService _storeNotificationService;
 
     public InventoryService(
         IUnitOfWork unitOfWork,
         ICloudinaryService cloudinaryService,
         IRealtimeNotificationService realtimeNotificationService,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        IStoreNotificationService storeNotificationService)
     {
+        _storeNotificationService = storeNotificationService;
         _unitOfWork = unitOfWork;
         _cloudinaryService = cloudinaryService;
         _realtimeNotificationService = realtimeNotificationService;
@@ -50,6 +54,36 @@ public class InventoryService : IInventoryService
             Note = note,
             CreatedAt = DateTimeHelper.VnNow,
             CreatedBy = actorId
+        });
+
+        if (type != InventoryTransactionType.Initial)
+            await CreateStockAlertIfNeededAsync(food, food.Quantity - quantityChange);
+    }
+
+    private async Task CreateStockAlertIfNeededAsync(StoreFood food, int quantityBefore)
+    {
+        var quantityAfter = food.Quantity;
+
+        string? alertType = null;
+
+        if (quantityBefore > 0 && quantityAfter <= 0)
+            alertType = StoreNotificationService.TypeOutOfStock;
+        else if (quantityBefore >= LowStockThreshold && quantityAfter > 0 && quantityAfter < LowStockThreshold)
+            alertType = StoreNotificationService.TypeLowStock;
+
+        if (alertType is null)
+            return;
+
+        var notification = await _storeNotificationService.CreateStockAlertAsync(food, alertType);
+
+        await _realtimeNotificationService.SendToStoreGroupAsync(food.StoreRefCode, "StockAlert", new StockAlertNotificationDto
+        {
+            StoreRefCode = food.StoreRefCode,
+            Type = alertType,
+            StoreFoodId = food.Id,
+            FoodName = food.FoodName,
+            Quantity = quantityAfter,
+            CreatedAt = notification.CreatedAt
         });
     }
 
@@ -351,7 +385,7 @@ public class InventoryService : IInventoryService
         await BroadcastQuantitiesAsync(foods);
 
         await _activityLogService.LogAgentActionAsync(currentUserId, null, "IMPORT_STOCK",
-            $"Nhập hàng phiếu \"{receipt.ReceiptCode}\": {receipt.TotalQuantity} sản phẩm, tổng tiền {receipt.TotalAmount:N0}đ", store.RefCode);
+            $"Nhập hàng phiếu \"{receipt.ReceiptCode}\": {receipt.TotalQuantity} sản phẩm, tổng tiền {receipt.TotalAmount:N0}đ", store.RefCode, targetType: "INVENTORY_RECEIPT", targetId: receipt.Id);
 
         return BaseResponse<string>.Success(receipt.ReceiptCode);
     }
@@ -542,10 +576,117 @@ public class InventoryService : IInventoryService
         await BroadcastQuantitiesAsync(lines.Where(x => x.Difference != 0).Select(x => x.Food));
 
         await _activityLogService.LogAgentActionAsync(currentUserId, null, "STOCKTAKE",
-            $"Kiểm kho phiếu \"{stocktake.StocktakeCode}\": {stocktake.TotalItems} món, chênh lệch {stocktake.TotalDifference:+#;-#;0} sản phẩm", store.RefCode);
+            $"Kiểm kho phiếu \"{stocktake.StocktakeCode}\": {stocktake.TotalItems} món, chênh lệch {stocktake.TotalDifference:+#;-#;0} sản phẩm", store.RefCode, targetType: "INVENTORY_STOCKTAKE", targetId: stocktake.Id);
 
         return BaseResponse<string>.Success(stocktake.StocktakeCode);
     }
+
+    public async Task<BaseTableResponse<InventoryStockItemDto>> SearchStockAsync(long currentUserId, BaseSearchRequest<InventoryStockSearchRequest> request)
+    {
+        NormalizePaging(request);
+
+        var queryFood = _unitOfWork.GetRepository<StoreFood>().Query().AsNoTracking();
+        var queryCategory = _unitOfWork.GetRepository<StoreFoodCategories>().Query().AsNoTracking();
+
+        var store = await _unitOfWork.GetOwnedStoreAsync(currentUserId);
+
+        if (store is null)
+            return EmptyTable<InventoryStockItemDto>(request.Page, request.PageSize);
+
+        var search = request.SearchParams;
+        var query = queryFood.Where(x => x.StoreRefCode == store.RefCode && !x.IsDeleted);
+
+        if (!string.IsNullOrWhiteSpace(search?.Keyword))
+        {
+            var keyword = search.Keyword.Trim().ToLower();
+            query = query.Where(x => x.FoodName.ToLower().Contains(keyword) || x.ProductCode.ToLower().Contains(keyword));
+        }
+
+        if (search?.StoreFoodCategoryId.HasValue == true)
+            query = query.Where(x => x.StoreFoodCategoryId == search.StoreFoodCategoryId);
+
+        query = search?.StockStatus switch
+        {
+            StockStatusOut => query.Where(x => x.Quantity <= 0),
+            StockStatusLow => query.Where(x => x.Quantity > 0 && x.Quantity < LowStockThreshold),
+            StockStatusIn => query.Where(x => x.Quantity >= LowStockThreshold),
+            _ => query
+        };
+
+        var totalRecords = await query.CountAsync();
+
+        var joined =
+            from f in query
+            join c in queryCategory on f.StoreFoodCategoryId equals c.Id into cg
+            from c in cg.DefaultIfEmpty()
+            select new { Food = f, CategoryName = c != null ? c.CategoryName : null };
+
+        joined = request.SortBy?.ToLower() switch
+        {
+            "quantity" => request.Asc ? joined.OrderBy(x => x.Food.Quantity) : joined.OrderByDescending(x => x.Food.Quantity),
+            "stockvalue" => request.Asc ? joined.OrderBy(x => x.Food.Quantity * x.Food.CostPrice) : joined.OrderByDescending(x => x.Food.Quantity * x.Food.CostPrice),
+            "foodname" => request.Asc ? joined.OrderBy(x => x.Food.FoodName) : joined.OrderByDescending(x => x.Food.FoodName),
+            _ => joined.OrderBy(x => x.Food.Quantity).ThenBy(x => x.Food.FoodName)
+        };
+
+        var items = await joined
+            .Skip((request.Page - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .ToListAsync();
+
+        return new BaseTableResponse<InventoryStockItemDto>
+        {
+            Items = items.Select(x => new InventoryStockItemDto
+            {
+                StoreFoodId = x.Food.Id,
+                FoodName = x.Food.FoodName,
+                ProductCode = x.Food.ProductCode,
+                ThumbnailUrl = BuildThumbnail(x.Food.ThumbnailUrl),
+                CategoryName = x.CategoryName,
+                Quantity = x.Food.Quantity,
+                CostPrice = x.Food.CostPrice,
+                Price = x.Food.Price,
+                StockValue = Math.Max(x.Food.Quantity, 0) * x.Food.CostPrice,
+                StockStatus = GetStockStatus(x.Food.Quantity),
+                IsAvailable = x.Food.IsAvailable
+            }).ToList(),
+            Page = request.Page,
+            PageSize = request.PageSize,
+            TotalRecords = totalRecords
+        };
+    }
+
+    public async Task<BaseResponse<InventoryStockSummaryDto>> GetStockSummaryAsync(long currentUserId)
+    {
+        var queryFood = _unitOfWork.GetRepository<StoreFood>().Query().AsNoTracking();
+
+        var store = await _unitOfWork.GetOwnedStoreAsync(currentUserId);
+
+        if (store is null)
+            return BaseResponse<InventoryStockSummaryDto>.Fail("Store not found");
+
+        var foods = await queryFood
+            .Where(x => x.StoreRefCode == store.RefCode && !x.IsDeleted)
+            .Select(x => new { x.Quantity, x.CostPrice })
+            .ToListAsync();
+
+        return BaseResponse<InventoryStockSummaryDto>.Success(new InventoryStockSummaryDto
+        {
+            TotalItems = foods.Count,
+            TotalQuantity = foods.Sum(x => Math.Max(x.Quantity, 0)),
+            TotalStockValue = foods.Sum(x => Math.Max(x.Quantity, 0) * x.CostPrice),
+            OutOfStock = foods.Count(x => x.Quantity <= 0),
+            LowStock = foods.Count(x => x.Quantity > 0 && x.Quantity < LowStockThreshold)
+        });
+    }
+
+    private const int LowStockThreshold = 5;
+    private const string StockStatusOut = "OUT_OF_STOCK";
+    private const string StockStatusLow = "LOW_STOCK";
+    private const string StockStatusIn = "IN_STOCK";
+
+    private static string GetStockStatus(int quantity)
+        => quantity <= 0 ? StockStatusOut : quantity < LowStockThreshold ? StockStatusLow : StockStatusIn;
 
     private async Task BroadcastQuantitiesAsync(IEnumerable<StoreFood> foods)
     {

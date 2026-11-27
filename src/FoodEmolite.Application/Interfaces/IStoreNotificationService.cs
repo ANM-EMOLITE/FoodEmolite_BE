@@ -16,4 +16,10 @@ public interface IStoreNotificationService
     Task<BaseResponse<string>> MarkReadAsync(long currentUserId, long id);
 
     Task<BaseResponse<string>> MarkAllReadAsync(long currentUserId);
+
+    Task<StoreNotification> CreateStockAlertAsync(StoreFood food, string type);
+
+    Task<BaseResponse<StoreNotificationListResponseDto>> GetMyStoreByGroupAsync(long currentUserId, int page, int pageSize, string? group, bool? isRead = null, int? days = null);
+
+    Task<BaseResponse<string>> MarkGroupReadAsync(long currentUserId, string group);
 }

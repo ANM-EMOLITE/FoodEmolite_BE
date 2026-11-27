@@ -29,4 +29,6 @@ public interface IStoreService
     Task<BaseResponse<StoreResponseDto>> GetDetailAsync(long id);
 
     Task<BaseResponse<StoreResponseDto>> GetByRefCodeAsync(string refCode);
+
+    Task<BaseResponse<string>> UpdateMyPaymentMethodsAsync(long currentUserId, UpdateStorePaymentMethodsRequestDto request);
 }

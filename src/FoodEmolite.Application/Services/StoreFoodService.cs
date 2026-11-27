@@ -148,7 +148,7 @@ public class StoreFoodService : IStoreFoodService
             await _unitOfWork.SaveChangesAsync();
         }
 
-        await _activityLogService.LogAgentActionAsync(null, refCode, "CREATE_FOOD", $"Thêm món \"{storeFood.FoodName}\"", storeFood.StoreRefCode);
+        await _activityLogService.LogAgentActionAsync(null, refCode, "CREATE_FOOD", $"Thêm món \"{storeFood.FoodName}\"", storeFood.StoreRefCode, targetType: "FOOD", targetId: storeFood.Id);
 
         return BaseResponse<string>.Success("Create store food successfully");
     }
@@ -507,7 +507,7 @@ public class StoreFoodService : IStoreFoodService
 
         await _unitOfWork.SaveChangesAsync();
 
-        await _activityLogService.LogAgentActionAsync(null, refCode, "UPDATE_FOOD", changes.Describe($"Cập nhật món \"{oldFoodName}\""), storeFood.StoreRefCode);
+        await _activityLogService.LogAgentActionAsync(null, refCode, "UPDATE_FOOD", changes.Describe($"Cập nhật món \"{oldFoodName}\""), storeFood.StoreRefCode, targetType: "FOOD", targetId: storeFood.Id);
 
         return BaseResponse<string>.Success("Update store food successfully");
     }

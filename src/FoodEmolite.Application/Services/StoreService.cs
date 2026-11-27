@@ -68,7 +68,7 @@ public class StoreService : IStoreService
             null,
             "CREATE_STORE",
             $"Tạo cửa hàng \"{store.StoreName}\"",
-            store.RefCode);
+            store.RefCode, targetType: "STORE", targetId: store.Id);
 
         return BaseResponse<string>.Success("Create store successfully");
     }
@@ -117,7 +117,7 @@ public class StoreService : IStoreService
         repoStore.Update(store);
         await _unitOfWork.SaveChangesAsync();
 
-        await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_STORE", changes.Describe($"Cập nhật thông tin cửa hàng \"{oldStoreName}\""), store.RefCode);
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_STORE", changes.Describe($"Cập nhật thông tin cửa hàng \"{oldStoreName}\""), store.RefCode, targetType: "STORE", targetId: store.Id);
 
         return BaseResponse<string>.Success("Update store successfully");
     }
@@ -142,7 +142,7 @@ public class StoreService : IStoreService
         await _unitOfWork.SaveChangesAsync();
 
         await _activityLogService.LogAgentActionAsync(currentUserId, null, isApproved ? "APPROVE_STORE" : "REJECT_STORE",
-            $"{(isApproved ? "Duyệt" : "Từ chối")} cửa hàng \"{store.StoreName}\"", store.RefCode);
+            $"{(isApproved ? "Duyệt" : "Từ chối")} cửa hàng \"{store.StoreName}\"", store.RefCode, targetType: "STORE", targetId: store.Id);
 
         return BaseResponse<string>.Success(isApproved ? "Đã duyệt cửa hàng" : "Đã từ chối cửa hàng");
     }
@@ -250,8 +250,38 @@ public class StoreService : IStoreService
             Description = store.Description,
             IsActive = store.IsActive,
             IsApproved = store.IsApproved,
+            AllowCash = store.AllowCash,
+            AllowBankTransfer = store.AllowBankTransfer,
             CreatedAt = store.CreatedAt
         });
+    }
+
+    public async Task<BaseResponse<string>> UpdateMyPaymentMethodsAsync(long currentUserId, UpdateStorePaymentMethodsRequestDto request)
+    {
+        var repoStore = _unitOfWork.GetRepository<Store>();
+        var queryBankAccount = _unitOfWork.GetRepository<BankAccount>().Query().AsNoTracking();
+
+        if (!request.AllowCash && !request.AllowBankTransfer)
+            return BaseResponse<string>.Fail("Phải bật ít nhất một phương thức thanh toán");
+
+        var store = await repoStore.FirstOrDefaultAsync(x => x.OwnerAccountId == currentUserId && !x.IsDeleted);
+
+        if (store is null)
+            return BaseResponse<string>.Fail("Store not found");
+
+        store.AllowCash = request.AllowCash;
+        store.AllowBankTransfer = request.AllowBankTransfer;
+        store.UpdatedAt = DateTimeHelper.VnNow;
+        repoStore.Update(store);
+        await _unitOfWork.SaveChangesAsync();
+
+        var methods = string.Join(", ", new[] { request.AllowCash ? "Tiền mặt" : null, request.AllowBankTransfer ? "Chuyển khoản" : null }.Where(x => x != null));
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_STORE", $"Cập nhật phương thức thanh toán: {methods}", store.RefCode, targetType: "STORE", targetId: store.Id);
+
+        if (request.AllowBankTransfer && !await queryBankAccount.AnyAsync(x => x.AccountId == currentUserId && x.IsActive))
+            return BaseResponse<string>.Success("NO_BANK_ACCOUNT", "Đã lưu. Cửa hàng chưa có tài khoản ngân hàng nên khách chưa chuyển khoản được");
+
+        return BaseResponse<string>.Success("OK", "Đã lưu phương thức thanh toán");
     }
 
     public async Task<BaseResponse<StoreResponseDto>> GetByRefCodeAsync(string refCode)
@@ -280,6 +310,8 @@ public class StoreService : IStoreService
             Description = store.Description,
             IsActive = store.IsActive,
             IsApproved = store.IsApproved,
+            AllowCash = store.AllowCash,
+            AllowBankTransfer = store.AllowBankTransfer,
             CreatedAt = store.CreatedAt
         });
     }

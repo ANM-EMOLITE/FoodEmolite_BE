@@ -8,6 +8,8 @@ public class ActivityLogResponseDto
     public string? ActorName { get; set; }
     public string Action { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public string? TargetType { get; set; }
+    public long? TargetId { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -18,6 +20,8 @@ public class ActivityLogSearchRequest
 
     /// <summary>Nhóm thao tác: CREATE (thêm) | UPDATE (sửa) | DELETE (xoá) | OTHER (còn lại: thanh toán, huỷ, tạm dừng...).</summary>
     public string? ActionGroup { get; set; }
+
+    public bool IncludeOrders { get; set; }
 
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }

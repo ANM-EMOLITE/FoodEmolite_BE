@@ -124,6 +124,8 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 var app = builder.Build();
 
+await app.Services.ApplySchemaUpdatesAsync();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();

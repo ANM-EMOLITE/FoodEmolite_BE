@@ -34,6 +34,22 @@ public class StoreNotificationController : BaseApiController
         return Ok(result);
     }
 
+    [HttpGet("group")]
+    public async Task<IActionResult> GetMyStoreByGroup([FromQuery] string? group = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] bool? isRead = null, [FromQuery] int? days = null)
+    {
+        var result = await _storeNotificationService.GetMyStoreByGroupAsync(CurrentUserId!.Value, page, pageSize, group, isRead, days);
+
+        return Ok(result);
+    }
+
+    [HttpPut("read-all/{group}")]
+    public async Task<IActionResult> MarkGroupRead(string group)
+    {
+        var result = await _storeNotificationService.MarkGroupReadAsync(CurrentUserId!.Value, group);
+
+        return Ok(result);
+    }
+
     [HttpPut("read-all")]
     public async Task<IActionResult> MarkAllRead()
     {

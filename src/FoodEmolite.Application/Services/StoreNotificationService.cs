@@ -147,6 +147,135 @@ public class StoreNotificationService : IStoreNotificationService
         return BaseResponse<string>.Success("Đã đánh dấu tất cả là đã đọc");
     }
 
+    public const string TypeNewOrder = "NEW_ORDER";
+    public const string TypeLowStock = "LOW_STOCK";
+    public const string TypeOutOfStock = "OUT_OF_STOCK";
+    public const string GroupOrder = "order";
+    public const string GroupStock = "stock";
+
+    public async Task<StoreNotification> CreateStockAlertAsync(StoreFood food, string type)
+    {
+        var notification = new StoreNotification
+        {
+            StoreRefCode = food.StoreRefCode,
+            Type = type,
+            StoreFoodId = food.Id,
+            FoodName = food.FoodName,
+            Quantity = food.Quantity,
+            IsRead = false,
+            CreatedAt = DateTimeHelper.VnNow
+        };
+
+        await _unitOfWork.GetRepository<StoreNotification>().AddAsync(notification);
+
+        return notification;
+    }
+
+    public async Task<BaseResponse<StoreNotificationListResponseDto>> GetMyStoreByGroupAsync(long currentUserId, int page, int pageSize, string? group, bool? isRead = null, int? days = null)
+    {
+        var queryNotification = _unitOfWork.GetRepository<StoreNotification>().Query().AsNoTracking();
+
+        var storeRefCode = await GetOwnedStoreRefCodeAsync(currentUserId);
+
+        if (storeRefCode is null)
+            return BaseResponse<StoreNotificationListResponseDto>.Fail("Store not found");
+
+        page = page <= 0 ? 1 : page;
+        pageSize = pageSize <= 0 ? 20 : Math.Min(pageSize, 100);
+
+        var query = queryNotification.Where(x => x.StoreRefCode == storeRefCode);
+
+        if (days is > 0)
+        {
+            var fromDate = DateTimeHelper.VnNow.Date.AddDays(-(days.Value - 1));
+            query = query.Where(x => x.CreatedAt >= fromDate);
+        }
+
+        var unread = await query
+            .Where(x => !x.IsRead)
+            .GroupBy(x => x.Type)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var orderUnread = unread.Where(x => x.Key == TypeNewOrder).Sum(x => x.Count);
+        var stockUnread = unread.Where(x => x.Key == TypeLowStock || x.Key == TypeOutOfStock).Sum(x => x.Count);
+
+        query = ApplyGroup(query, group);
+
+        if (isRead.HasValue)
+            query = query.Where(x => x.IsRead == isRead.Value);
+
+        var totalRecords = await query.CountAsync();
+
+        var items = await query
+            .OrderByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(x => new StoreNotificationResponseDto
+            {
+                Id = x.Id,
+                Type = x.Type,
+                OrderId = x.OrderId,
+                OrderCode = x.OrderCode,
+                StoreRefCode = x.StoreRefCode,
+                CustomerName = x.CustomerName,
+                TotalAmount = x.TotalAmount,
+                StoreFoodId = x.StoreFoodId,
+                FoodName = x.FoodName,
+                Quantity = x.Quantity,
+                IsRead = x.IsRead,
+                CreatedAt = x.CreatedAt
+            })
+            .ToListAsync();
+
+        return BaseResponse<StoreNotificationListResponseDto>.Success(new StoreNotificationListResponseDto
+        {
+            Items = items,
+            UnreadCount = unread.Sum(x => x.Count),
+            OrderUnreadCount = orderUnread,
+            StockUnreadCount = stockUnread,
+            TotalRecords = totalRecords
+        });
+    }
+
+    public async Task<BaseResponse<string>> MarkGroupReadAsync(long currentUserId, string group)
+    {
+        var repo = _unitOfWork.GetRepository<StoreNotification>();
+
+        var storeRefCode = await GetOwnedStoreRefCodeAsync(currentUserId);
+
+        if (storeRefCode is null)
+            return BaseResponse<string>.Fail("Store not found");
+
+        var now = DateTimeHelper.VnNow;
+
+        var unread = await ApplyGroup(repo.Query().Where(x => x.StoreRefCode == storeRefCode && !x.IsRead), group)
+            .ToListAsync();
+
+        foreach (var notification in unread)
+        {
+            notification.IsRead = true;
+            notification.ReadAt = now;
+            repo.Update(notification);
+        }
+
+        if (unread.Count > 0)
+            await _unitOfWork.SaveChangesAsync();
+
+        return BaseResponse<string>.Success("Đã đánh dấu đã đọc");
+    }
+
+    private static IQueryable<StoreNotification> ApplyGroup(IQueryable<StoreNotification> query, string? group)
+    {
+        return group?.ToLower() switch
+        {
+            GroupOrder => query.Where(x => x.Type == TypeNewOrder),
+            GroupStock => query.Where(x => x.Type == TypeLowStock || x.Type == TypeOutOfStock),
+            _ => query
+        };
+    }
+
     private async Task<string?> GetOwnedStoreRefCodeAsync(long currentUserId)
     {
         var store = await _unitOfWork.GetRepository<Store>()

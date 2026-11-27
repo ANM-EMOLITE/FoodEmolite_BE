@@ -266,8 +266,6 @@ public class RevenueService : IRevenueService
         var currentOrders = orders.Where(x => x.CreatedAt >= fromDate).ToList();
         var previousOrders = orders.Where(x => x.CreatedAt < fromDate).ToList();
 
-        var products = await BuildProductRevenueAsync(store.RefCode, fromDate, toEnd);
-
         return BaseResponse<AgentDashboardResponseDto>.Success(new AgentDashboardResponseDto
         {
             StoreName = store.StoreName,
@@ -282,9 +280,7 @@ public class RevenueService : IRevenueService
             PreviousDaily = BuildDashboardDaily(previousOrders, previousFromDate, previousToDate),
             OutOfStock = foods.Count(x => x.Quantity <= 0),
             LowStock = foods.Count(x => x.Quantity > 0 && x.Quantity < LowStockThreshold),
-            Unavailable = foods.Count(x => !x.IsAvailable),
-            TopByQuantity = products.OrderByDescending(x => x.QuantitySold).Take(5).ToList(),
-            TopByRevenue = products.OrderByDescending(x => x.Revenue).Take(5).ToList()
+            Unavailable = foods.Count(x => !x.IsAvailable)
         });
     }
 

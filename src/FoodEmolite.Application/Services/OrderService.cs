@@ -112,6 +112,9 @@ public class OrderService : IOrderService
 
         var isPayLater = foods.Any(x => x.IsPayLater);
 
+        if (!isPayLater && !IsPaymentMethodAllowed(store, request.PaymentMethod))
+            return BaseResponse<CreateOrderResponseDto>.Fail("Cửa hàng không hỗ trợ phương thức thanh toán này");
+
         var requiredQuantities = request.Items.GroupBy(x => x.StoreFoodId).ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
         foreach (var food in foods)
@@ -275,7 +278,7 @@ public class OrderService : IOrderService
                 actorDisplayName,
                 "CREATE_ORDER",
                 $"Chủ cửa hàng tạo đơn hàng \"{order.OrderCode}\" tại quầy (POS), tổng tiền {order.TotalAmount:N0}đ",
-                store.RefCode);
+                store.RefCode, targetType: "ORDER", targetId: order.Id);
         }
         else
         {
@@ -284,7 +287,7 @@ public class OrderService : IOrderService
                 currentUserId,
                 actorDisplayName,
                 "CREATE_ORDER",
-                $"Tạo đơn hàng \"{order.OrderCode}\" tại cửa hàng \"{store.StoreName}\", tổng tiền {order.TotalAmount:N0}đ");
+                $"Tạo đơn hàng \"{order.OrderCode}\" tại cửa hàng \"{store.StoreName}\", tổng tiền {order.TotalAmount:N0}đ", storeRefCode: store.RefCode, targetType: "ORDER", targetId: order.Id);
         }
 
         return BaseResponse<CreateOrderResponseDto>.Success(
@@ -352,6 +355,9 @@ public class OrderService : IOrderService
             return BaseResponse<CreateOrderResponseDto>.Fail("Food not found");
 
         var isPayLater = foods.Any(x => x.IsPayLater);
+
+        if (!isPayLater && !IsPaymentMethodAllowed(store, request.PaymentMethod))
+            return BaseResponse<CreateOrderResponseDto>.Fail("Cửa hàng không hỗ trợ phương thức thanh toán này");
 
         var requiredQuantities = request.Items.GroupBy(x => x.StoreFoodId).ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
@@ -548,7 +554,7 @@ public class OrderService : IOrderService
             customer.Id,
             customer.CustomerName,
             "CREATE_ORDER",
-            $"Khách vãng lai tạo đơn hàng \"{order.OrderCode}\" tại cửa hàng \"{store.StoreName}\", tổng tiền {order.TotalAmount:N0}đ");
+            $"Khách vãng lai tạo đơn hàng \"{order.OrderCode}\" tại cửa hàng \"{store.StoreName}\", tổng tiền {order.TotalAmount:N0}đ", storeRefCode: store.RefCode, targetType: "ORDER", targetId: order.Id);
 
         return BaseResponse<CreateOrderResponseDto>.Success(
             new CreateOrderResponseDto
@@ -1209,7 +1215,7 @@ public class OrderService : IOrderService
                 confirmerName,
                 "CONFIRM_PAYMENT",
                 $"Xác nhận thanh toán đơn hàng \"{order.OrderCode}\", tổng tiền {order.TotalAmount:N0}đ",
-                order.StoreRefCode);
+                order.StoreRefCode, targetType: "ORDER", targetId: order.Id);
         }
 
         return BaseResponse<string>.Success("Update payment status successfully");
@@ -1291,7 +1297,7 @@ public class OrderService : IOrderService
             actorDisplayName,
             "UPDATE_PAY_LATER_PRICE",
             $"Cập nhật giá món trả tiền sau cho đơn \"{order.OrderCode}\": {oldTotal:N0}đ → {order.TotalAmount:N0}đ",
-            order.StoreRefCode);
+            order.StoreRefCode, targetType: "ORDER", targetId: order.Id);
 
         return BaseResponse<string>.Success("Cập nhật giá thành công");
     }
@@ -1354,7 +1360,7 @@ public class OrderService : IOrderService
             cancellerName,
             "CANCEL_ORDER",
             $"Huỷ đơn hàng \"{order.OrderCode}\", tổng tiền {order.TotalAmount:N0}đ",
-            order.StoreRefCode);
+            order.StoreRefCode, targetType: "ORDER", targetId: order.Id);
 
         return BaseResponse<string>.Success("Cancel order successfully");
     }
@@ -2070,4 +2076,7 @@ public class OrderService : IOrderService
             .RemoteIpAddress?
             .ToString();
     }
+
+    private static bool IsPaymentMethodAllowed(Store store, string paymentMethod)
+        => paymentMethod == "CASH" ? store.AllowCash : paymentMethod != "BANK_TRANSFER" || store.AllowBankTransfer;
 }

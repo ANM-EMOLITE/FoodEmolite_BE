@@ -160,7 +160,7 @@ public class StoreFoodCategoriesService : IStoreFoodCategoriesService
         await repoCategory.AddAsync(entity);
         await _unitOfWork.SaveChangesAsync();
 
-        await _activityLogService.LogAgentActionAsync(currentUserId, null, "CREATE_CATEGORY", $"Tạo danh mục \"{entity.CategoryName}\"", store.RefCode);
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "CREATE_CATEGORY", $"Tạo danh mục \"{entity.CategoryName}\"", store.RefCode, targetType: "CATEGORY", targetId: entity.Id);
 
         return BaseResponse<string>
             .Success("Create category successfully");
@@ -209,7 +209,7 @@ public class StoreFoodCategoriesService : IStoreFoodCategoriesService
 
         await _unitOfWork.SaveChangesAsync();
 
-        await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_CATEGORY", changes.Describe($"Cập nhật danh mục \"{oldCategoryName}\""), store.RefCode);
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_CATEGORY", changes.Describe($"Cập nhật danh mục \"{oldCategoryName}\""), store.RefCode, targetType: "CATEGORY", targetId: category.Id);
 
         return BaseResponse<string>.Success("Update category successfully");
     }

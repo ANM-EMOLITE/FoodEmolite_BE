@@ -110,6 +110,8 @@ public class ProfileService : IProfileService
                         Description = store.Description,
                         IsActive = store.IsActive,
                         IsApproved = store.IsApproved,
+                        AllowCash = store.AllowCash,
+                        AllowBankTransfer = store.AllowBankTransfer,
                         CreatedAt = store.CreatedAt
                     }
             });

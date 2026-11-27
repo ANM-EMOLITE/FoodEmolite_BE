@@ -1,0 +1,5 @@
+﻿ALTER TABLE food_emolite.stores
+    ADD COLUMN IF NOT EXISTS allow_cash BOOLEAN NOT NULL DEFAULT TRUE;
+
+ALTER TABLE food_emolite.stores
+    ADD COLUMN IF NOT EXISTS allow_bank_transfer BOOLEAN NOT NULL DEFAULT TRUE;

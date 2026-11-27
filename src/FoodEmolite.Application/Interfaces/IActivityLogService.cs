@@ -6,13 +6,13 @@ namespace FoodEmolite.Application.Interfaces;
 
 public interface IActivityLogService
 {
-    Task LogAsync(string actorType, long? actorId, string? actorName, string action, string description, string? storeRefCode = null);
+    Task LogAsync(string actorType, long? actorId, string? actorName, string action, string description, string? storeRefCode = null, string? targetType = null, long? targetId = null);
 
     /// <summary>
     /// Ghi log hành động của đại lý trên cửa hàng của họ. Tự tìm tên hiển thị theo accountId hoặc accountRefCode
     /// (truyền một trong hai).
     /// </summary>
-    Task LogAgentActionAsync(long? accountId, string? accountRefCode, string action, string description, string? storeRefCode);
+    Task LogAgentActionAsync(long? accountId, string? accountRefCode, string action, string description, string? storeRefCode, string? targetType = null, long? targetId = null);
 
     /// <summary>
     /// Tìm lịch sử hoạt động. Không truyền storeRefCode thì lấy toàn bộ (admin);

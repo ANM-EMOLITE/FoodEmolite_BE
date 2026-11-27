@@ -15,8 +15,6 @@ public class AgentDashboardResponseDto
     public int OutOfStock { get; set; }
     public int LowStock { get; set; }
     public int Unavailable { get; set; }
-    public List<TopSellingProductDto> TopByQuantity { get; set; } = [];
-    public List<TopSellingProductDto> TopByRevenue { get; set; } = [];
 }
 
 public class DashboardSummaryDto

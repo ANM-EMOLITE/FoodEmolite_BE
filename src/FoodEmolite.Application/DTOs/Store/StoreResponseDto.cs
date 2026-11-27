@@ -27,6 +27,10 @@ namespace FoodEmolite.Application.DTOs.Store
         public bool IsActive { get; set; }
 
         public bool IsApproved { get; set; }
+
+        public bool AllowCash { get; set; }
+
+        public bool AllowBankTransfer { get; set; }
         public DateTime? CreatedAt { get; set; }
     }
 }

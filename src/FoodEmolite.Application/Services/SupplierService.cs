@@ -122,7 +122,7 @@ public class SupplierService : ISupplierService
         await _unitOfWork.SaveChangesAsync();
 
         await _activityLogService.LogAgentActionAsync(currentUserId, null, "CREATE_SUPPLIER",
-            $"Tạo nhà cung cấp \"{supplier.SupplierName}\" ({supplier.SupplierCode})", store.RefCode);
+            $"Tạo nhà cung cấp \"{supplier.SupplierName}\" ({supplier.SupplierCode})", store.RefCode, targetType: "SUPPLIER", targetId: supplier.Id);
 
         return BaseResponse<string>.Success(supplier.SupplierCode);
     }
@@ -164,7 +164,7 @@ public class SupplierService : ISupplierService
         await _unitOfWork.SaveChangesAsync();
 
         await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_SUPPLIER",
-            changes.Describe($"Cập nhật nhà cung cấp \"{oldName}\""), store.RefCode);
+            changes.Describe($"Cập nhật nhà cung cấp \"{oldName}\""), store.RefCode, targetType: "SUPPLIER", targetId: supplier.Id);
 
         return BaseResponse<string>.Success("Cập nhật nhà cung cấp thành công");
     }

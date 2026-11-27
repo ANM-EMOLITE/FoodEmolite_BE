@@ -289,7 +289,7 @@ public class PromotionService : IPromotionService
             });
         }
 
-        await _activityLogService.LogAgentActionAsync(currentUserId, null, "CREATE_PROMOTION", $"Tạo chương trình khuyến mãi \"{request.Name.Trim()}\"", store.RefCode);
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "CREATE_PROMOTION", $"Tạo chương trình khuyến mãi \"{request.Name.Trim()}\"", store.RefCode, targetType: "PROMOTION", targetId: promotion.Id);
 
         return BaseResponse<string>.Success("Tạo chương trình khuyến mãi thành công");
     }
@@ -416,7 +416,7 @@ public class PromotionService : IPromotionService
             });
         }
 
-        await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_PROMOTION", promotionChanges.Describe($"Cập nhật chương trình khuyến mãi \"{oldPromotionName}\""), promotion.StoreRefCode);
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_PROMOTION", promotionChanges.Describe($"Cập nhật chương trình khuyến mãi \"{oldPromotionName}\""), promotion.StoreRefCode, targetType: "PROMOTION", targetId: promotion.Id);
 
         return BaseResponse<string>.Success("Cập nhật chương trình khuyến mãi thành công");
     }
@@ -615,7 +615,7 @@ public class PromotionService : IPromotionService
 
         await UpdateStatusAsync(promotion, PromotionStatusCalculator.Paused, currentUserId);
 
-        await _activityLogService.LogAgentActionAsync(currentUserId, null, "PAUSE_PROMOTION", $"Tạm dừng chương trình khuyến mãi \"{promotion.Name}\"", promotion.StoreRefCode);
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "PAUSE_PROMOTION", $"Tạm dừng chương trình khuyến mãi \"{promotion.Name}\"", promotion.StoreRefCode, targetType: "PROMOTION", targetId: promotion.Id);
 
         return BaseResponse<string>.Success("Tạm dừng chương trình thành công");
     }
@@ -649,7 +649,7 @@ public class PromotionService : IPromotionService
 
         await UpdateStatusAsync(promotion, status, currentUserId);
 
-        await _activityLogService.LogAgentActionAsync(currentUserId, null, "RESUME_PROMOTION", $"Tiếp tục chương trình khuyến mãi \"{promotion.Name}\"", promotion.StoreRefCode);
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "RESUME_PROMOTION", $"Tiếp tục chương trình khuyến mãi \"{promotion.Name}\"", promotion.StoreRefCode, targetType: "PROMOTION", targetId: promotion.Id);
 
         return BaseResponse<string>.Success("Tiếp tục chương trình thành công");
     }
@@ -666,7 +666,7 @@ public class PromotionService : IPromotionService
 
         await UpdateStatusAsync(promotion, PromotionStatusCalculator.Ended, currentUserId);
 
-        await _activityLogService.LogAgentActionAsync(currentUserId, null, "CANCEL_PROMOTION", $"Huỷ chương trình khuyến mãi \"{promotion.Name}\"", promotion.StoreRefCode);
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "CANCEL_PROMOTION", $"Huỷ chương trình khuyến mãi \"{promotion.Name}\"", promotion.StoreRefCode, targetType: "PROMOTION", targetId: promotion.Id);
 
         return BaseResponse<string>.Success("Huỷ chương trình thành công");
     }

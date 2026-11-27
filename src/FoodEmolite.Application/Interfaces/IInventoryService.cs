@@ -23,4 +23,8 @@ public interface IInventoryService
     Task<BaseResponse<InventoryStocktakeResponseDto>> GetStocktakeDetailAsync(long currentUserId, long id);
 
     Task<BaseResponse<string>> CreateStocktakeAsync(long currentUserId, string refCode, CreateInventoryStocktakeRequestDto request);
+
+    Task<BaseTableResponse<InventoryStockItemDto>> SearchStockAsync(long currentUserId, BaseSearchRequest<InventoryStockSearchRequest> request);
+
+    Task<BaseResponse<InventoryStockSummaryDto>> GetStockSummaryAsync(long currentUserId);
 }

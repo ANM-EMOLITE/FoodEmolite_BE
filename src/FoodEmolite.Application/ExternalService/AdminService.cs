@@ -81,7 +81,7 @@ public class AdminService : IAdminService
             null,
             "CREATE_STORE",
             $"Tạo cửa hàng \"{store.StoreName}\"",
-            store.RefCode);
+            store.RefCode, targetType: "STORE", targetId: store.Id);
 
         return BaseResponse<string>.Success("Create store successfully");
     }
@@ -132,7 +132,7 @@ public class AdminService : IAdminService
         repoStore.Update(store);
         await _unitOfWork.SaveChangesAsync();
 
-        await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_STORE", changes.Describe($"Cập nhật thông tin cửa hàng \"{oldStoreName}\""), store.RefCode);
+        await _activityLogService.LogAgentActionAsync(currentUserId, null, "UPDATE_STORE", changes.Describe($"Cập nhật thông tin cửa hàng \"{oldStoreName}\""), store.RefCode, targetType: "STORE", targetId: store.Id);
 
         return BaseResponse<string>.Success("Update store successfully");
     }
@@ -159,7 +159,7 @@ public class AdminService : IAdminService
         await _unitOfWork.SaveChangesAsync();
 
         await _activityLogService.LogAgentActionAsync(currentUserId, null, isApproved ? "APPROVE_STORE" : "REJECT_STORE",
-            $"{(isApproved ? "Duyệt" : "Từ chối")} cửa hàng \"{store.StoreName}\"", store.RefCode);
+            $"{(isApproved ? "Duyệt" : "Từ chối")} cửa hàng \"{store.StoreName}\"", store.RefCode, targetType: "STORE", targetId: store.Id);
 
         return BaseResponse<string>.Success(isApproved ? "Đã duyệt cửa hàng" : "Đã từ chối cửa hàng");
     }

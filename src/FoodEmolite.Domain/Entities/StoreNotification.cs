@@ -13,7 +13,7 @@ public class StoreNotification : BaseEntity
     [Column("store_ref_code")]
     public string StoreRefCode { get; set; } = string.Empty;
 
-    /// <summary>Loại thông báo: NEW_ORDER (hiện tại chỉ có đơn hàng mới).</summary>
+    /// <summary>Loại thông báo: NEW_ORDER | LOW_STOCK | OUT_OF_STOCK.</summary>
     [Column("type")]
     public string Type { get; set; } = "NEW_ORDER";
 
@@ -28,6 +28,15 @@ public class StoreNotification : BaseEntity
 
     [Column("total_amount")]
     public decimal? TotalAmount { get; set; }
+
+    [Column("store_food_id")]
+    public long? StoreFoodId { get; set; }
+
+    [Column("food_name")]
+    public string? FoodName { get; set; }
+
+    [Column("quantity")]
+    public int? Quantity { get; set; }
 
     [Column("is_read")]
     public bool IsRead { get; set; } = false;

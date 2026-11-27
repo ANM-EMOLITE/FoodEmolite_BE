@@ -31,6 +31,12 @@ public class Store : BaseEntity
     [Column("is_approved")]
     public bool IsApproved { get; set; } = true;
 
+    [Column("allow_cash")]
+    public bool AllowCash { get; set; } = true;
+
+    [Column("allow_bank_transfer")]
+    public bool AllowBankTransfer { get; set; } = true;
+
     [Column("is_deleted")]
     public bool IsDeleted { get; set; } = false;
 }

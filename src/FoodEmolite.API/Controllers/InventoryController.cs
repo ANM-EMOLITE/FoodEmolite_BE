@@ -24,6 +24,14 @@ public class InventoryController : BaseApiController
     public async Task<IActionResult> SearchTransactions([FromBody] BaseSearchRequest<InventoryTransactionSearchRequest> request)
         => Ok(await _inventoryService.SearchTransactionsAsync(CurrentUserId!.Value, request));
 
+    [HttpPost("stock/search")]
+    public async Task<IActionResult> SearchStock([FromBody] BaseSearchRequest<InventoryStockSearchRequest> request)
+        => Ok(await _inventoryService.SearchStockAsync(CurrentUserId!.Value, request));
+
+    [HttpGet("stock/summary")]
+    public async Task<IActionResult> GetStockSummary()
+        => Ok(await _inventoryService.GetStockSummaryAsync(CurrentUserId!.Value));
+
     [HttpPost("receipts/search")]
     public async Task<IActionResult> SearchReceipts([FromBody] BaseSearchRequest<InventoryReceiptSearchRequest> request)
         => Ok(await _inventoryService.SearchReceiptsAsync(CurrentUserId!.Value, request));

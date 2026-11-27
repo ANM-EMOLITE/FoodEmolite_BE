@@ -18,7 +18,7 @@ public class ActivityLogService : IActivityLogService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task LogAsync(string actorType, long? actorId, string? actorName, string action, string description, string? storeRefCode = null)
+    public async Task LogAsync(string actorType, long? actorId, string? actorName, string action, string description, string? storeRefCode = null, string? targetType = null, long? targetId = null)
     {
         var repo = _unitOfWork.GetRepository<ActivityLog>();
 
@@ -30,13 +30,15 @@ public class ActivityLogService : IActivityLogService
             Action = action,
             Description = description,
             StoreRefCode = storeRefCode,
+            TargetType = targetType,
+            TargetId = targetId,
             CreatedAt = DateTimeHelper.VnNow
         });
 
         await _unitOfWork.SaveChangesAsync();
     }
 
-    public async Task LogAgentActionAsync(long? accountId, string? accountRefCode, string action, string description, string? storeRefCode)
+    public async Task LogAgentActionAsync(long? accountId, string? accountRefCode, string action, string description, string? storeRefCode, string? targetType = null, long? targetId = null)
     {
         var repoAccount = _unitOfWork.GetRepository<Account>();
         var repoProfile = _unitOfWork.GetRepository<AccountProfile>();
@@ -64,7 +66,7 @@ public class ActivityLogService : IActivityLogService
             }
         }
 
-        await LogAsync("Agent", account?.Id, name, action, description, storeRefCode);
+        await LogAsync("Agent", account?.Id, name, action, description, storeRefCode, targetType, targetId);
     }
 
     public async Task<BaseTableResponse<ActivityLogResponseDto>> SearchAuditLogAsync(long agentAccountId, BaseSearchRequest<ActivityLogSearchRequest> request)
@@ -99,7 +101,10 @@ public class ActivityLogService : IActivityLogService
         var query = repo.Query().AsNoTracking();
         if (storeRefCode != null)
         {
-            query = query.Where(x => x.StoreRefCode == storeRefCode && x.Action != "CREATE_ORDER");
+            query = query.Where(x => x.StoreRefCode == storeRefCode);
+
+            if (search?.IncludeOrders != true)
+                query = query.Where(x => x.Action != "CREATE_ORDER");
         }
 
         var trimmedKeyword = search?.Keyword?.Trim();
@@ -157,6 +162,8 @@ public class ActivityLogService : IActivityLogService
                 ActorName = x.ActorName,
                 Action = x.Action,
                 Description = x.Description,
+                TargetType = x.TargetType,
+                TargetId = x.TargetId,
                 CreatedAt = x.CreatedAt
             })
             .ToListAsync();

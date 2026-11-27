@@ -1,4 +1,5 @@
-﻿using FoodEmolite.Application.DTOs.Store;
+using FoodEmolite.API.Filters;
+using FoodEmolite.Application.DTOs.Store;
 using FoodEmolite.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -24,6 +25,14 @@ public class StoreController : BaseApiController
         [FromQuery] int pageSize = 10)
     {
         var result = await _storeService.GetAllAsync(page, pageSize);
+        return Ok(result);
+    }
+
+    [AgentValidation]
+    [HttpPut("my/payment-methods")]
+    public async Task<IActionResult> UpdateMyPaymentMethods([FromBody] UpdateStorePaymentMethodsRequestDto request)
+    {
+        var result = await _storeService.UpdateMyPaymentMethodsAsync(CurrentUserId!.Value, request);
         return Ok(result);
     }
 
