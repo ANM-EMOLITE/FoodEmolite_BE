@@ -38,7 +38,7 @@ public class AuthService : IAuthService
 
         if (existedEmail)
         {
-            return BaseResponse<string>.Fail("Email already exists");
+            return BaseResponse<string>.Fail("Email đã được sử dụng");
         }
 
         var existedUsername = await repoAccount
@@ -47,7 +47,7 @@ public class AuthService : IAuthService
 
         if (existedUsername)
         {
-            return BaseResponse<string>.Fail("Username already exists");
+            return BaseResponse<string>.Fail("Tên đăng nhập đã tồn tại");
         }
 
         var account = new Account
@@ -62,7 +62,7 @@ public class AuthService : IAuthService
         await repoAccount.AddAsync(account);
         await _unitOfWork.SaveChangesAsync();
 
-        return BaseResponse<string>.Success("Register successfully");
+        return BaseResponse<string>.Success("Đăng ký thành công");
     }
 
     public async Task<BaseResponse<LoginResponse>> LoginAsync(LoginRequest request)
@@ -78,7 +78,7 @@ public class AuthService : IAuthService
         if (account is null)
         {
             return BaseResponse<LoginResponse>
-                .Fail("Account not found");
+                .Fail("Tài khoản không tồn tại");
         }
 
         var isValid = BCrypt.Net.BCrypt
@@ -89,7 +89,7 @@ public class AuthService : IAuthService
         if (!isValid)
         {
             return BaseResponse<LoginResponse>
-                .Fail("Password incorrect");
+                .Fail("Mật khẩu không đúng");
         }
 
         var httpContext = _httpContextAccessor.HttpContext;
@@ -182,7 +182,7 @@ public class AuthService : IAuthService
         var account = await repoAccount.FirstOrDefaultAsync(x => x.Id == userId && !x.IsDeleted);
 
         if (account is null)
-            return BaseResponse<string>.Fail("Account not found");
+            return BaseResponse<string>.Fail("Tài khoản không tồn tại");
 
         if (!BCrypt.Net.BCrypt.Verify(request.OldPassword, account.PasswordHash))
             return BaseResponse<string>.Fail("Mật khẩu hiện tại không đúng");
@@ -213,7 +213,7 @@ public class AuthService : IAuthService
 
         if (account is null)
             return BaseResponse<CurrentUserResponse>
-                .Fail("Account not found");
+                .Fail("Tài khoản không tồn tại");
 
         return BaseResponse<CurrentUserResponse>
             .Success(new CurrentUserResponse

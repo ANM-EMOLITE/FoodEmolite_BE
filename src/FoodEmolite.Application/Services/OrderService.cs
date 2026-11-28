@@ -1365,6 +1365,194 @@ public class OrderService : IOrderService
         return BaseResponse<string>.Success("Cancel order successfully");
     }
 
+    public async Task<BaseTableResponse<OrderResponseDto>> GetGuestOrdersAsync(string deviceId, int page, int pageSize)
+    {
+        if (string.IsNullOrWhiteSpace(deviceId))
+            return new BaseTableResponse<OrderResponseDto> { Items = [], Page = 1, PageSize = pageSize, TotalRecords = 0 };
+
+        var repoOrder = _unitOfWork.GetRepository<Order>();
+        var repoOrderItem = _unitOfWork.GetRepository<OrderItem>();
+        var repoFood = _unitOfWork.GetRepository<StoreFood>();
+        var repoCustomer = _unitOfWork.GetRepository<Customer>();
+
+        page = page <= 0 ? 1 : page;
+        pageSize = pageSize <= 0 ? 10 : pageSize;
+
+        var query = repoOrder
+            .Query()
+            .AsNoTracking()
+            .Where(x => x.CustomerAccountId == null && repoCustomer.Query().Any(c => c.Id == x.CustomerId && c.DeviceId == deviceId));
+
+        var totalRecords = await query.CountAsync();
+
+        var items = await (
+             from order in query
+
+             join customer in repoCustomer.Query().AsNoTracking()
+                 on order.CustomerId equals customer.Id
+
+             orderby order.Id descending
+
+             select new OrderResponseDto
+             {
+                 Id = order.Id,
+                 OrderCode = order.OrderCode,
+                 RefCode = order.RefCode,
+                 CustomerAccountId = order.CustomerAccountId,
+
+                 CustomerName = customer.CustomerName,
+
+                 StoreRefCode = order.StoreRefCode,
+                 TotalAmount = order.TotalAmount,
+                 OrderStatus = order.OrderStatus,
+                 PaymentStatus = order.PaymentStatus,
+                 PaymentMethod = order.PaymentMethod,
+                 Note = order.Note,
+                 CreatedAt = order.CreatedAt,
+                 OrderSource = order.OrderSource,
+                 OrderType = order.OrderType,
+                 DeliveryPhone = order.DeliveryPhone,
+                 DeliveryProvinceCode = order.DeliveryProvinceCode,
+                 DeliveryProvinceName = order.DeliveryProvinceName,
+                 DeliveryWardCode = order.DeliveryWardCode,
+                 DeliveryWardName = order.DeliveryWardName,
+                 DeliveryStreet = order.DeliveryStreet,
+                 DeliveryLatitude = order.DeliveryLatitude,
+                 DeliveryLongitude = order.DeliveryLongitude,
+                 Items = new List<OrderItemResponseDto>()
+             })
+             .Skip((page - 1) * pageSize)
+             .Take(pageSize)
+             .ToListAsync();
+
+        var orderIds = items
+            .Select(x => x.Id)
+            .ToList();
+
+        var orderItems = await (
+            from orderItem in repoOrderItem.Query().AsNoTracking()
+            join food in repoFood.Query().AsNoTracking()
+                on orderItem.StoreFoodId equals food.Id
+            where orderIds.Contains(orderItem.OrderId)
+            select new OrderItemResponseDto
+            {
+                Id = orderItem.Id,
+                OrderId = orderItem.OrderId,
+                StoreFoodId = orderItem.StoreFoodId,
+                FoodName = food.FoodName,
+                ProductCode = food.ProductCode,
+                ThumbnailUrl = food.ThumbnailUrl,
+                Quantity = orderItem.Quantity,
+                UnitPrice = orderItem.UnitPrice,
+                TotalPrice = orderItem.TotalPrice,
+                OriginalUnitPrice = orderItem.OriginalUnitPrice,
+                PromotionId = orderItem.PromotionId,
+                PromotionName = orderItem.PromotionName
+            })
+            .ToListAsync();
+        await FillOrderItemOptionsAsync(orderItems);
+
+        foreach (var item in orderItems)
+        {
+            item.ThumbnailUrl = BuildFoodThumbnailUrl(item.ThumbnailUrl);
+        }
+        foreach (var order in items)
+        {
+            order.Items = orderItems
+                .Where(x => x.OrderId == order.Id)
+                .ToList();
+        }
+
+        return new BaseTableResponse<OrderResponseDto>
+        {
+            Items = items,
+            Page = page,
+            PageSize = pageSize,
+            TotalRecords = totalRecords
+        };
+    }
+
+    public async Task<BaseResponse<string>> CancelByCustomerAsync(long id, long currentUserId)
+    {
+        var repoOrder = _unitOfWork.GetRepository<Order>();
+
+        var order = await repoOrder.FirstOrDefaultAsync(x => x.Id == id && x.CustomerAccountId == currentUserId);
+
+        if (order is null)
+            return BaseResponse<string>.Fail("Order not found");
+
+        var customerName = await GetCustomerDisplayNameAsync(currentUserId);
+
+        return await CancelOwnOrderAsync(order, "Customer", currentUserId, customerName);
+    }
+
+    public async Task<BaseResponse<string>> CancelByGuestAsync(long id, string deviceId)
+    {
+        var repoOrder = _unitOfWork.GetRepository<Order>();
+        var repoCustomer = _unitOfWork.GetRepository<Customer>();
+
+        if (string.IsNullOrWhiteSpace(deviceId))
+            return BaseResponse<string>.Fail("Order not found");
+
+        var customer = await repoCustomer.FirstOrDefaultAsync(x => x.DeviceId == deviceId);
+
+        if (customer is null)
+            return BaseResponse<string>.Fail("Order not found");
+
+        var order = await repoOrder.FirstOrDefaultAsync(x => x.Id == id && x.CustomerAccountId == null && x.CustomerId == customer.Id);
+
+        if (order is null)
+            return BaseResponse<string>.Fail("Order not found");
+
+        return await CancelOwnOrderAsync(order, "Guest", customer.Id, customer.CustomerName);
+    }
+
+    private async Task<BaseResponse<string>> CancelOwnOrderAsync(Order order, string actorType, long actorId, string? actorName)
+    {
+        var repoOrder = _unitOfWork.GetRepository<Order>();
+        var repoOrderHistory = _unitOfWork.GetRepository<OrderHistory>();
+
+        if (order.OrderStatus == OrderStatus.Cancelled)
+            return BaseResponse<string>.Fail("Đơn hàng đã được huỷ trước đó");
+
+        if (order.OrderStatus == OrderStatus.Completed)
+            return BaseResponse<string>.Fail("Đơn hàng đã hoàn thành, không thể huỷ");
+
+        if (order.PaymentStatus == PaymentStatus.Paid)
+            return BaseResponse<string>.Fail("Đơn hàng đã thanh toán, vui lòng liên hệ cửa hàng để huỷ");
+
+        var oldStatus = order.OrderStatus;
+
+        order.OrderStatus = OrderStatus.Cancelled;
+        order.UpdatedAt = DateTimeHelper.VnNow;
+        repoOrder.Update(order);
+
+        var restoredFoods = await RestoreFoodQuantitiesAsync(order, actorType == "Customer" ? actorId : 0);
+
+        await repoOrderHistory.AddAsync(new OrderHistory
+        {
+            OrderId = order.Id,
+            OldStatus = EnumCode.ToCode(oldStatus),
+            NewStatus = EnumCode.ToCode(OrderStatus.Cancelled),
+            ChangedNote = "Khách huỷ đơn",
+            CreatedAt = DateTimeHelper.VnNow
+        });
+
+        await _unitOfWork.SaveChangesAsync();
+
+        await BroadcastFoodQuantitiesAsync(order.StoreRefCode, restoredFoods);
+
+        await _activityLogService.LogAsync(
+            actorType,
+            actorId,
+            actorName,
+            "CANCEL_ORDER",
+            $"Khách huỷ đơn hàng \"{order.OrderCode}\", tổng tiền {order.TotalAmount:N0}đ",
+            order.StoreRefCode, targetType: "ORDER", targetId: order.Id);
+
+        return BaseResponse<string>.Success("Đã huỷ đơn hàng");
+    }
+
     public async Task<BaseResponse<string>> GetPaymentStatusAsync(string orderCode)
     {
         var repoOrder = _unitOfWork.GetRepository<Order>();

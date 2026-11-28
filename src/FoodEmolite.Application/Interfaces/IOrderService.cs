@@ -28,6 +28,12 @@ public interface IOrderService
 
     Task<BaseResponse<string>> CancelAsync(long id, long currentUserId, string refCode);
 
+    Task<BaseTableResponse<OrderResponseDto>> GetGuestOrdersAsync(string deviceId, int page, int pageSize);
+
+    Task<BaseResponse<string>> CancelByCustomerAsync(long id, long currentUserId);
+
+    Task<BaseResponse<string>> CancelByGuestAsync(long id, string deviceId);
+
 
     Task<BaseResponse<string>> GetPaymentStatusAsync(string orderCode);
 

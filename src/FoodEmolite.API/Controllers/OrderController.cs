@@ -50,6 +50,29 @@ public class OrderController : BaseApiController
         return Ok(result);
     }
 
+    [AllowAnonymous]
+    [HttpGet("guest/my")]
+    public async Task<IActionResult> GetGuestOrders([FromQuery] string deviceId, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+    {
+        var result = await _orderService.GetGuestOrdersAsync(deviceId, page, pageSize);
+        return Ok(result);
+    }
+
+    [HttpPut("{id}/customer-cancel")]
+    public async Task<IActionResult> CancelByCustomer(long id)
+    {
+        var result = await _orderService.CancelByCustomerAsync(id, CurrentUserId!.Value);
+        return Ok(result);
+    }
+
+    [AllowAnonymous]
+    [HttpPut("{id}/guest-cancel")]
+    public async Task<IActionResult> CancelByGuest(long id, [FromQuery] string deviceId)
+    {
+        var result = await _orderService.CancelByGuestAsync(id, deviceId);
+        return Ok(result);
+    }
+
     [HttpGet("{id}")]
     public async Task<IActionResult> GetDetail(long id)
     {
